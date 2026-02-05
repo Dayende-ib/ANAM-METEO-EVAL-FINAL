@@ -507,6 +507,47 @@ export async function fetchMetricsList(limit = 50) {
   return requestJson<MetricsListResponse>(`/metrics?limit=${limit}`);
 }
 
+export interface JsonMetricsFileInfo {
+  path: string;
+  name: string;
+  size_bytes: number;
+  modified_at: string;
+  date?: string | null;
+  month?: string | null;
+  year?: number | null;
+  map_type?: string | null;
+}
+
+export interface JsonMetricsFilesResponse {
+  files: JsonMetricsFileInfo[];
+  total: number;
+}
+
+export interface JsonMetricsFilePayload {
+  path: string;
+  data: {
+    date_bulletin?: string;
+    map_type?: string;
+    source_image?: string;
+    stations?: Array<{
+      nom?: string | null;
+      tmin?: number | null;
+      tmax?: number | null;
+      weather_icon?: string | null;
+    }>;
+  };
+}
+
+export async function fetchJsonMetricsFiles() {
+  return requestJson<JsonMetricsFilesResponse>(`/json-metrics/files`);
+}
+
+export async function fetchJsonMetricsFile(path: string) {
+  return requestJson<JsonMetricsFilePayload>(
+    `/json-metrics/file?path=${encodeURIComponent(path)}`,
+  );
+}
+
 export async function recalculateMetrics(force = false) {
   return postJson<{
     status: string;

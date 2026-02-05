@@ -1,9 +1,13 @@
 import io
+import json
 import logging
+import re
+import unicodedata
 import uuid
 import zipfile
+from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile, Path as ApiPath
 from fastapi.concurrency import run_in_threadpool
@@ -27,6 +31,106 @@ from backend.modules.temperature_extractor import TemperatureExtractor
 
 logger = logging.getLogger("anam.api")
 router = APIRouter(tags=["data_management"])
+
+_MONTHS_FR = {
+    "janvier": 1,
+    "fevrier": 2,
+    "fevrier": 2,
+    "mars": 3,
+    "avril": 4,
+    "mai": 5,
+    "juin": 6,
+    "juillet": 7,
+    "aout": 8,
+    "septembre": 9,
+    "octobre": 10,
+    "novembre": 11,
+    "decembre": 12,
+}
+
+
+def _strip_accents(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value)
+    return "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+
+
+def _parse_bulletin_date(filename: str) -> Optional[str]:
+    match = re.search(r"Bulletin_du_(\d{2})_([A-Za-z\u00c0-\u017f]+)_(\d{4})", filename)
+    if not match:
+        return None
+    day_str, month_raw, year_str = match.groups()
+    month_key = _strip_accents(month_raw).lower()
+    month_num = _MONTHS_FR.get(month_key)
+    if not month_num:
+        return None
+    try:
+        return datetime(int(year_str), month_num, int(day_str)).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _map_type_from_name(filename: str) -> Optional[str]:
+    lowered = filename.lower()
+    if "observed" in lowered or "observation" in lowered:
+        return "observed"
+    if "forecast" in lowered or "prevision" in lowered:
+        return "forecast"
+    return None
+
+
+@router.get("/json-metrics/files")
+async def list_json_metrics_files():
+    """Liste les fichiers JSON de mÃ©triques disponibles dans backend/json."""
+    base_dir = (core.config.project_root / "json") if core.config else None
+    if base_dir is None or not base_dir.exists():
+        return {"files": [], "total": 0}
+
+    files: List[Dict[str, Any]] = []
+    for json_path in sorted(base_dir.rglob("*.json")):
+        try:
+            stat = json_path.stat()
+        except OSError:
+            continue
+        rel_path = json_path.relative_to(base_dir).as_posix()
+        date_value = _parse_bulletin_date(json_path.name)
+        files.append(
+            {
+                "path": rel_path,
+                "name": json_path.name,
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.utcfromtimestamp(stat.st_mtime).isoformat() + "Z",
+                "date": date_value,
+                "month": date_value[:7] if date_value else None,
+                "year": int(date_value[:4]) if date_value else None,
+                "map_type": _map_type_from_name(json_path.name),
+            }
+        )
+
+    return {"files": files, "total": len(files)}
+
+
+@router.get("/json-metrics/file")
+async def get_json_metrics_file(path: str = Query(..., min_length=1)):
+    """Retourne le contenu d'un fichier JSON de mÃ©triques."""
+    base_dir = (core.config.project_root / "json") if core.config else None
+    if base_dir is None:
+        raise HTTPException(status_code=500, detail="Configuration indisponible.")
+
+    base_dir = base_dir.resolve()
+    target = (base_dir / path).resolve()
+    if base_dir != target and base_dir not in target.parents:
+        raise HTTPException(status_code=400, detail="Chemin invalide.")
+    if target.suffix.lower() != ".json":
+        raise HTTPException(status_code=400, detail="Seuls les fichiers JSON sont autorisÃ©s.")
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Fichier introuvable.")
+
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Lecture JSON impossible: {exc}")
+
+    return {"path": path, "data": payload}
 
 @router.post("/scrape", response_model=ScrapeResponse)
 async def trigger_scrape(request: ScrapeRequest):

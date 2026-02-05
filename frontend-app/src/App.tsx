@@ -4,6 +4,7 @@ import { AboutPage } from "./pages/AboutPage";
 import { MapPage } from "./pages/MapPage";
 import { ExplorationBulletinsPage } from "./pages/ExplorationBulletinsPage";
 import { MetriquesEvaluationPage } from "./pages/MetriquesEvaluationPage";
+import { JsonMetricsPage } from "./pages/JsonMetricsPage";
 import { PilotagePipelinePage } from "./pages/PilotagePipelinePage";
 import { UploadBulletinPage } from "./pages/UploadBulletinPage";
 import { ValidationIssuesPage } from "./pages/ValidationIssuesPage";
@@ -20,6 +21,7 @@ export default function App() {
      <Route path="/dashboard" element={<DashboardPage />} />
      <Route path="/exploration-bulletins" element={<ExplorationBulletinsPage />} />
      <Route path="/metriques-evaluation" element={<MetriquesEvaluationPage />} />
+     <Route path="/metriques-json" element={<JsonMetricsPage />} />
      <Route path="/pilotage-pipeline" element={<PilotagePipelinePage />} />
      <Route path="/upload" element={<UploadBulletinPage />} />
      <Route path="/map" element={<MapPage />} />

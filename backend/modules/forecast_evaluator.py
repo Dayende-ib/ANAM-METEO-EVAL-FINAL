@@ -75,8 +75,21 @@ class ForecastEvaluator:
         y_true = [item[0] for item in pairs]
         y_pred = [item[1] for item in pairs]
 
-        labels = sorted(set(y_true) | set(y_pred))
-        matrix = confusion_matrix(y_true, y_pred, labels=labels)
+        # Get all unique labels from both arrays to ensure proper confusion matrix
+        all_labels = sorted(set(y_true) | set(y_pred))
+        
+        # Handle case where there's only one label (avoid sklearn warning)
+        if len(all_labels) == 1:
+            # If all predictions are correct, create a 1x1 matrix with count
+            if y_true == y_pred:
+                matrix = np.array([[len(y_true)]])
+            else:
+                # This case shouldn't happen in practice since we have only one label
+                # but all predictions are wrong - create zero matrix
+                matrix = np.array([[0]])
+        else:
+            # Multiple labels case - use sklearn normally
+            matrix = confusion_matrix(y_true, y_pred, labels=all_labels)
 
         accuracy = accuracy_score(y_true, y_pred)
         precision = precision_score(y_true, y_pred, average="weighted", zero_division=0)
@@ -89,7 +102,7 @@ class ForecastEvaluator:
             "recall_weather": recall,
             "f1_score_weather": f1,
             "confusion_matrix": {
-                "labels": labels,
+                "labels": all_labels,
                 "matrix": matrix.tolist(),
             },
             "sample_size": len(y_true),

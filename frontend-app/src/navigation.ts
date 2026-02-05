@@ -8,6 +8,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Tableau de bord", to: "/dashboard", icon: "dashboard" },
   { label: "Exploration des bulletins", to: "/exploration-bulletins", icon: "description" },
   { label: "Métriques d'évaluation", to: "/metriques-evaluation", icon: "assessment" },
+  { label: "Métriques JSON", to: "/metriques-json", icon: "analytics" },
   { label: "Pilotage du pipeline", to: "/pilotage-pipeline", icon: "settings" },
   { label: "Téléchargement", to: "/upload", icon: "cloud_upload" },
   { label: "Carte", to: "/map", icon: "public" },

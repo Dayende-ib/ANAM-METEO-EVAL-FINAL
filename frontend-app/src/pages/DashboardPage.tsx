@@ -157,7 +157,9 @@ export function DashboardPage() {
   } catch (err) {
   const status = (err as { status?: number })?.status;
   if (status === 404) {
-   setMetricsError("Aucune métrique disponible pour cette date.");
+   setMetricsError(
+    "Aucune métrique disponible pour cette date. Relancez le calcul ou choisissez une autre date."
+   );
   } else {
    console.error("Échec du chargement des métriques:", err);
    setMetricsError("Échec du chargement des métriques du tableau de bord.");
@@ -179,6 +181,11 @@ export function DashboardPage() {
   setMetricsHistory(Array.isArray(list.items) ? list.items : []);
   setTrendError(null);
   } catch (err) {
+  const status = (err as { status?: number })?.status;
+  if (status === 404) {
+   setTrendError("Aucune donnée historique de métriques n'est disponible.");
+   return;
+  }
   console.error("Echec du chargement de l'historique:", err);
   setTrendError("Echec du chargement de l'historique des tendances.");
   setMetricsHistory([]);
