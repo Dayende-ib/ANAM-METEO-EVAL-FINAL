@@ -11,7 +11,8 @@
       "WebFetch(domain:www.braced.org)",
       "WebFetch(domain:fr.glosbe.com)",
       "Bash(where:*)",
-      "Bash(pdftotext:*)"
+      "Bash(pdftotext:*)",
+      "WebFetch(domain:manus.im)"
     ]
   }
 }

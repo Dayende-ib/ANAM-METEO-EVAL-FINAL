@@ -591,6 +591,47 @@ export function DetailsStationsPage() {
                               )}
                             </p>
                           </div>
+
+                          {/* Action buttons - Share & Voice */}
+                          <div className="flex items-center justify-end gap-2 pt-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const text = `${lang.stationText || ""}\n\n${lang.bulletinText || ""}`;
+                                if (navigator.share) {
+                                  navigator.share({
+                                    title: `Bulletin Meteo - ${lang.lang}`,
+                                    text: text,
+                                  });
+                                } else {
+                                  navigator.clipboard.writeText(text);
+                                }
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--canvas-strong)] hover:bg-[var(--border)] text-muted hover:text-ink transition-all text-xs font-medium"
+                              title="Partager"
+                            >
+                              <span className="material-symbols-outlined text-base">share</span>
+                              <span className="hidden sm:inline">Partager</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const text = `${lang.stationText || ""} ${lang.bulletinText || ""}`;
+                                if (text.trim() && "speechSynthesis" in window) {
+                                  window.speechSynthesis.cancel();
+                                  const utterance = new SpeechSynthesisUtterance(text);
+                                  utterance.lang = lang.lang === "Francais" ? "fr-FR" : "fr-FR";
+                                  utterance.rate = 0.9;
+                                  window.speechSynthesis.speak(utterance);
+                                }
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--canvas-strong)] hover:bg-[var(--border)] text-muted hover:text-ink transition-all text-xs font-medium"
+                              title="Ecouter"
+                            >
+                              <span className="material-symbols-outlined text-base">volume_up</span>
+                              <span className="hidden sm:inline">Ecouter</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );

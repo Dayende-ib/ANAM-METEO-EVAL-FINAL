@@ -55,7 +55,7 @@ const FEATURES = [
   },
   {
     icon: "public",
-    title: "Carte Interactive",
+    title: "Informations détaillées sur les stations",
     description: "Visualisation géographique des stations météo du Burkina Faso sur carte interactive",
     to: "/map",
     gradient: "from-blue-400 to-indigo-600",
@@ -126,7 +126,7 @@ export function HomePage() {
               </span>
             </button>
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/login")}
               className="hidden sm:inline-flex rounded-full bg-gradient-to-r from-primary-500 to-primary-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/25 hover:from-primary-600 hover:to-primary-700 transition-all"
             >
               Connexion

@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HomePage } from "./pages/HomePage";
+import { LoginPage } from "./pages/LoginPage";
 import { AboutPage } from "./pages/AboutPage";
 import { MapPage } from "./pages/MapPage";
 import { ExplorationBulletinsPage } from "./pages/ExplorationBulletinsPage";
@@ -19,6 +20,7 @@ export default function App() {
    <div className="flex h-screen flex-col overflow-hidden bg-canvas text-ink font-body antialiased ">
     <Routes>
      <Route path="/" element={<HomePage />} />
+     <Route path="/login" element={<LoginPage />} />
      <Route path="/dashboard" element={<DashboardPage />} />
      <Route path="/exploration-bulletins" element={<ExplorationBulletinsPage />} />
      <Route path="/metriques-evaluation" element={<MetriquesEvaluationPage />} />
