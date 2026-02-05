@@ -30,15 +30,6 @@ class Config:
         # API endpoints
         self.llm_api_endpoint = os.getenv("LLM_API_ENDPOINT", "http://localhost:8000/api/translate")
         
-        # Roboflow configuration (used for bulletin detections)
-        self.roboflow_api_key = os.getenv("ROBOFLOW_API_KEY")
-        self.roboflow_model_id = os.getenv("ROBOFLOW_MODEL_ID")
-        self.roboflow_api_url = os.getenv("ROBOFLOW_API_URL", "https://detect.roboflow.com")
-        self.roboflow_workspace = os.getenv("ROBOFLOW_WORKSPACE")
-        self.roboflow_workflow_id = os.getenv("ROBOFLOW_WORKFLOW_ID")
-        self.roboflow_workflow_api_url = os.getenv(
-            "ROBOFLOW_WORKFLOW_API_URL", "https://serverless.roboflow.com"
-        )
         roi_default = self.project_root / "config_roi.json"
         roi_env = os.getenv("ROI_CONFIG_PATH")
         if roi_env:

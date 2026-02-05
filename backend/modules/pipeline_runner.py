@@ -11,7 +11,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 
 from backend.modules.data_integrator import DataIntegrator
@@ -184,6 +184,13 @@ class PipelineRunner:
                 pdf_results, temperature_data = [], []
             else:
                 pdf_results, temperature_data = self._execute_ocr(pending_pdfs)
+                self._persist_intermediate_payloads(
+                    data_integrator,
+                    temperature_data,
+                    icon_data=None,
+                    stage="ocr",
+                )
+                self._persist_artifact_file("ocr.json", temperature_data)
             
             if self._is_cancelled():
                 self._finish_cancelled()
@@ -195,6 +202,13 @@ class PipelineRunner:
                 icon_data = []
             else:
                 icon_data = self._execute_classification(pdf_results)
+                self._persist_intermediate_payloads(
+                    data_integrator,
+                    temperature_data,
+                    icon_data=icon_data,
+                    stage="classification",
+                )
+                self._persist_artifact_file("icons.json", icon_data)
             
             if self._is_cancelled():
                 self._finish_cancelled()
@@ -448,6 +462,131 @@ class PipelineRunner:
             metadata=self.metadata,
             finished=finished,
         )
+
+    def _persist_artifact_file(self, filename: str, payload: Any) -> None:
+        """Save intermediate artifacts to disk for debugging/replay."""
+        try:
+            run_dir = self.config.output_directory / "pipeline_runs" / str(self.run_id)
+            run_dir.mkdir(parents=True, exist_ok=True)
+            path = run_dir / filename
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+            self.metadata.setdefault("artifacts", [])
+            if str(path) not in self.metadata["artifacts"]:
+                self.metadata["artifacts"].append(str(path))
+            self._persist_state()
+        except Exception as exc:
+            self._append_note(f"Artifact save failed ({filename}): {exc}")
+
+    def _persist_intermediate_payloads(
+        self,
+        data_integrator: DataIntegrator,
+        temperature_data: List[Dict],
+        icon_data: Optional[List[Dict]] = None,
+        stage: str = "ocr",
+    ) -> None:
+        """Persist intermediate extraction results after each module."""
+        if not temperature_data:
+            return
+
+        icon_index = {}
+        for entry in icon_data or []:
+            key = _normalize_path(entry.get("pdf_path"))
+            if key:
+                icon_index[key] = entry
+
+        saved_payloads = 0
+        saved_snapshots = 0
+        for temp_pdf_data in temperature_data:
+            pdf_path = temp_pdf_data.get("pdf_path")
+            if not pdf_path:
+                continue
+            key = _normalize_path(str(pdf_path))
+            icon_pdf_data = icon_index.get(key, {"pdf_path": pdf_path, "data": []})
+
+            aligned_maps = self._align_intermediate_maps(
+                temp_pdf_data.get("data", []),
+                icon_pdf_data.get("data", []),
+            )
+
+            stations: List[Dict] = []
+            for map_type, temps, icons in aligned_maps:
+                combined = data_integrator.combine_page_data(temps, icons)
+                for station in combined:
+                    station_payload = {
+                        "name": station.get("name"),
+                        "bbox": station.get("bbox"),
+                        "tmin": station.get("tmin"),
+                        "tmax": station.get("tmax"),
+                        "tmin_raw": station.get("tmin_raw"),
+                        "tmax_raw": station.get("tmax_raw"),
+                        "weather_condition": station.get("weather_condition"),
+                        "confidence": station.get("confidence"),
+                        "type": map_type,
+                        "extraction_stage": stage,
+                    }
+                    stations.append(station_payload)
+
+            payload = {
+                "pdf_path": str(pdf_path),
+                "stations": stations,
+                "stage": stage,
+                "generated_at": self._now(),
+            }
+
+            try:
+                self.db_manager.upsert_bulletin_payload(str(pdf_path), payload)
+                saved_payloads += 1
+            except Exception as exc:
+                self._append_note(f"Intermediate payload persist failed for {pdf_path}: {exc}")
+
+            for station in stations:
+                try:
+                    self.db_manager.upsert_station_snapshot(str(pdf_path), station)
+                    saved_snapshots += 1
+                except Exception as exc:
+                    name = station.get("name") or "station_sans_nom"
+                    self._append_note(f"Snapshot persist failed for {name}: {exc}")
+
+        self.metadata[f"{stage}_payloads_saved"] = saved_payloads
+        self.metadata[f"{stage}_snapshots_saved"] = saved_snapshots
+        self._persist_state()
+
+    @staticmethod
+    def _align_intermediate_maps(temp_maps: List[Dict], icon_maps: List[Dict]):
+        """Align observation/forecast maps for intermediate persistence."""
+        if not temp_maps and not icon_maps:
+            return []
+
+        icons_by_type: Dict[str, List[Dict]] = {}
+        for entry in icon_maps or []:
+            icons_by_type.setdefault(entry.get("type") or "observation", []).extend(
+                entry.get("icons", [])
+            )
+
+        aligned = []
+        for temp_entry in temp_maps or []:
+            map_type = temp_entry.get("type", "observation")
+            if map_type not in {"observation", "forecast"}:
+                map_type = "observation"
+            temps = temp_entry.get("temperatures", [])
+            aligned.append((map_type, temps, icons_by_type.get(map_type, [])))
+
+        mapped_types = set()
+        for entry in temp_maps or []:
+            entry_type = entry.get("type", "observation")
+            if entry_type not in {"observation", "forecast"}:
+                entry_type = "observation"
+            mapped_types.add(entry_type)
+
+        for icon_entry in icon_maps or []:
+            map_type = icon_entry.get("type", "observation")
+            if map_type not in {"observation", "forecast"}:
+                map_type = "observation"
+            if map_type not in mapped_types:
+                aligned.append((map_type, [], icon_entry.get("icons", [])))
+
+        return aligned
 
     def _finish_success(self):
         self._persist_state(status="success", finished=True)

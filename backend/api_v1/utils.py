@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import time
 from datetime import datetime
@@ -128,23 +129,20 @@ def _serialize_pipeline_run(run: Dict[str, Any], include_steps: bool):
 
 # Auto-pipeline helpers
 def _get_latest_bulletin_date():
-    if core.db_manager is None:
+    if core.services is None:
         return None
-    conn = core.db_manager.get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT MAX(date) FROM bulletins")
-    row = cursor.fetchone()
-    if not row or not row[0]:
+    raw_date = core.services.bulletins.get_latest_bulletin_date()
+    if not raw_date:
         return None
     try:
-        return datetime.strptime(row[0], "%Y-%m-%d").date()
+        return datetime.strptime(raw_date, "%Y-%m-%d").date()
     except ValueError:
         return None
 
 def _get_last_auto_pipeline_date():
-    if core.db_manager is None:
+    if core.services is None:
         return None
-    raw_value = core.db_manager.get_app_state(core.AUTO_PIPELINE_STATE_KEY)
+    raw_value = core.services.app_state.get(core.AUTO_PIPELINE_STATE_KEY)
     if not raw_value:
         return None
     try:
@@ -153,15 +151,15 @@ def _get_last_auto_pipeline_date():
         return None
 
 def _set_last_auto_pipeline_date(value):
-    if core.db_manager is None:
+    if core.services is None:
         return
-    core.db_manager.set_app_state(core.AUTO_PIPELINE_STATE_KEY, value.strftime("%Y-%m-%d"))
+    core.services.app_state.set(core.AUTO_PIPELINE_STATE_KEY, value.strftime("%Y-%m-%d"))
 
 def _get_temp_retention_days() -> int:
     default_days = int(os.getenv("TEMP_FILE_RETENTION_DAYS", "7"))
-    if core.db_manager is None:
+    if core.services is None:
         return default_days
-    raw_value = core.db_manager.get_app_state(core.TEMP_RETENTION_STATE_KEY)
+    raw_value = core.services.app_state.get(core.TEMP_RETENTION_STATE_KEY)
     if not raw_value:
         return default_days
     try:
@@ -171,9 +169,9 @@ def _get_temp_retention_days() -> int:
     return parsed if parsed > 0 else default_days
 
 def _set_temp_retention_days(value: int) -> None:
-    if core.db_manager is None:
+    if core.services is None:
         return
-    core.db_manager.set_app_state(core.TEMP_RETENTION_STATE_KEY, str(value))
+    core.services.app_state.set(core.TEMP_RETENTION_STATE_KEY, str(value))
 
 def _should_trigger_auto_pipeline(today) -> bool:
     last_run = _get_last_auto_pipeline_date()

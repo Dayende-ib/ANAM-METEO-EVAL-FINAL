@@ -245,6 +245,33 @@ class TranslationRegenerateRequest(BaseModel):
     station_name: str
     language: Optional[str] = None  # moore, dioula ou None/all pour tout régénérer
 
+
+class TextExtractionResult(BaseModel):
+    """Résultat de l'extraction de texte d'un bulletin"""
+    observation_text: Optional[str] = None
+    forecast_text: Optional[str] = None
+    extracted_at: str
+    pdf_path: str
+
+
+class TranslationResult(BaseModel):
+    """Résultat d'une traduction"""
+    language: str
+    text: str
+    translated_at: str
+    source_text: str
+
+
+class BulletinTranslationResponse(BaseModel):
+    """Réponse complète pour les traductions d'un bulletin"""
+    date: str
+    french_text: Optional[str] = None
+    moore_translation: Optional[str] = None
+    dioula_translation: Optional[str] = None
+    extracted_at: Optional[str] = None
+    translations: List[TranslationResult] = Field(default_factory=list)
+
+
     class Config:
         json_schema_extra = {
             "example": {

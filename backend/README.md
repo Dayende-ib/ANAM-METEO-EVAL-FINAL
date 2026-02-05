@@ -6,7 +6,6 @@ Ce dossier contient le pipeline de traitement, l'API FastAPI et les scripts util
 - Python 3.10+.
 - Poppler (conversion PDF) et Tesseract OCR disponibles dans le PATH.
 - Compte Hugging Face avec acces au modele Gemma (si generation locale activee).
-- Cle Roboflow valide (si inference distante activee).
 
 ## Installation
 ```bash
@@ -57,7 +56,7 @@ python backend/batch_process.py --demo
 - **`temperature_extractor.py`** : Extraction numérique ciblée des températures Tmin/Tmax par détection de zones (ROI).
 
 ### 🧠 Analyse et Intelligence
-- **`icon_classifier.py`** : Classification des icônes météo via Computer Vision (Roboflow/Local).
+- **`icon_classifier.py`** : Classification des icônes météo via Computer Vision (local).
 - **`language_interpreter.py`** : Traduction multilingue (Mooré, Dioula) via le modèle NLLB-200.
 - **`local_bulletin_generator.py`** : Génération de la narration textuelle à partir des données structurées.
 

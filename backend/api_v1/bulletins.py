@@ -1,12 +1,19 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.api_v1.models import BulletinData, BulletinsPage, TranslationRegenerateRequest
+from backend.api_v1.models import (
+    BulletinData, 
+    BulletinsPage, 
+    TranslationRegenerateRequest,
+    TextExtractionResult,
+    TranslationResult,
+    BulletinTranslationResponse
+)
 import backend.api_v1.core as core
-from backend.api_v1.core import _ensure_db_ready, ErrorCode
+from backend.api_v1.core import _ensure_services_ready, ErrorCode
 from backend.api_v1.utils import _cache_get, _cache_set, _cache_clear, _load_result_file
 from backend.utils.background_tasks import get_task_manager, TaskStatus
 
@@ -19,10 +26,10 @@ async def list_bulletins(
     offset: int = Query(0, ge=0),
 ):
     """Return paginated bulletin summaries."""
-    _ensure_db_ready()
-    assert core.db_manager is not None
-    items = core.db_manager.list_bulletin_summaries(limit=limit, offset=offset)
-    total = core.db_manager.count_bulletin_summaries()
+    _ensure_services_ready()
+    assert core.services is not None
+    items = core.services.bulletins.list_summaries(limit=limit, offset=offset)
+    total = core.services.bulletins.count_summaries()
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
@@ -67,13 +74,13 @@ async def get_bulletin_by_date(
     stations_payload = []
     bulletin_interpretations = {"fr": None, "moore": None, "dioula": None}
     
-    if core.db_manager is not None:
-        payloads = core.db_manager.list_bulletin_payloads_by_date(date)
+    if core.services is not None:
+        payloads = core.services.bulletins.list_payloads_by_date(date)
         
         try:
             dt_obj = datetime.strptime(date, "%Y-%m-%d")
             prev_date = (dt_obj - timedelta(days=1)).strftime("%Y-%m-%d")
-            prev_payloads = core.db_manager.list_bulletin_payloads_by_date(prev_date)
+            prev_payloads = core.services.bulletins.list_payloads_by_date(prev_date)
             prev_forecasts = [p for p in prev_payloads if p.get("type") == "forecast" or "forecast" in str(p.get("pdf_path")).lower() or "prevision" in str(p.get("pdf_path")).lower()]
             payloads = prev_forecasts + payloads
         except Exception as e:
@@ -137,10 +144,10 @@ async def get_bulletin_by_date(
 @router.post("/bulletins/regenerate-translation")
 async def regenerate_translation(payload: TranslationRegenerateRequest):
     """Régénérer une interprétation ou une traduction spécifique."""
-    _ensure_db_ready()
-    assert core.db_manager is not None
+    _ensure_services_ready()
+    assert core.services is not None
     
-    station_payloads = core.db_manager.list_bulletin_payloads_by_date(payload.date)
+    station_payloads = core.services.bulletins.list_payloads_by_date(payload.date)
     if not station_payloads:
         raise HTTPException(status_code=404, detail="Bulletin non trouvé pour cette date.")
         
@@ -177,7 +184,7 @@ async def regenerate_translation(payload: TranslationRegenerateRequest):
             raise HTTPException(status_code=404, detail="Station ou bulletin non trouvé pour cette date.")
         
     from backend.modules.language_interpreter import LanguageInterpreter
-    interpreter = LanguageInterpreter.get_shared(core.db_manager)
+    interpreter = LanguageInterpreter.get_shared(core.services.db_manager)
     
     if payload.language in [None, "all", "interpretation_francais", "fr", "francais"]:
         french_text = interpreter._generate_french_bulletin(target_station)
@@ -227,7 +234,11 @@ async def regenerate_translation(payload: TranslationRegenerateRequest):
     bulletin_type_detected = type_map.get(str(raw_type).lower(), "observation")
     
     logger.info(f"Mise à jour DB pour le bulletin {payload.date} (Type détecté: {raw_type} -> DB: {bulletin_type_detected})")
-    rows_updated = core.db_manager.update_bulletin_interpretations(payload.date, bulletin_type_detected, new_translations)
+    rows_updated = core.services.bulletins.update_bulletin_interpretations(
+        payload.date,
+        bulletin_type_detected,
+        new_translations,
+    )
     logger.info(f"Nombre de lignes mises à jour dans 'bulletins' : {rows_updated}")
     
     station_snapshot = target_station.copy()
@@ -235,7 +246,7 @@ async def regenerate_translation(payload: TranslationRegenerateRequest):
     station_snapshot["interpretation_moore"] = None
     station_snapshot["interpretation_dioula"] = None
     
-    core.db_manager.upsert_station_snapshot(target_pdf_path, station_snapshot)
+    core.services.bulletins.upsert_station_snapshot(target_pdf_path, station_snapshot)
     
     for entry in station_payloads:
         if entry.get("pdf_path") == target_pdf_path:
@@ -249,7 +260,7 @@ async def regenerate_translation(payload: TranslationRegenerateRequest):
                     entry["stations"][i] = station_snapshot
                     break
             
-            core.db_manager.upsert_bulletin_payload(target_pdf_path, entry)
+            core.services.bulletins.upsert_bulletin_payload(target_pdf_path, entry)
             logger.info(f"Payload JSON mis à jour pour {target_pdf_path}")
             break
             
@@ -284,16 +295,16 @@ async def regenerate_translation_async(payload: TranslationRegenerateRequest):
     - Le client peut interroger le statut et récupérer le résultat
     - Évite les traductions inutiles si déjà présentes
     """
-    _ensure_db_ready()
-    assert core.db_manager is not None
+    _ensure_services_ready()
+    assert core.services is not None
     
     # Vérification rapide que le bulletin existe
-    station_payloads = core.db_manager.list_bulletin_payloads_by_date(payload.date)
+    station_payloads = core.services.bulletins.list_payloads_by_date(payload.date)
     if not station_payloads:
         raise HTTPException(status_code=404, detail="Bulletin non trouvé pour cette date.")
     
     # ✨ NOUVELLE FONCTIONNALITÉ : Vérifier si les traductions existent déjà dans la BD
-    existing_bulletins = core.db_manager.list_bulletin_summaries(limit=500)
+    existing_bulletins = core.services.bulletins.list_summaries(limit=500)
     target_bulletin = None
     for bulletin in existing_bulletins:
         if bulletin.get("date") == payload.date:
@@ -350,7 +361,7 @@ async def regenerate_translation_async(payload: TranslationRegenerateRequest):
         from backend.modules.language_interpreter import LanguageInterpreter
         
         # Récupérer les données de la station
-        station_payloads = core.db_manager.list_bulletin_payloads_by_date(payload.date)
+        station_payloads = core.services.bulletins.list_payloads_by_date(payload.date)
         target_station = None
         target_pdf_path = None
         is_generic = payload.station_name.lower() in ["bulletin national", "national", "all", "tout", "toutes"]
@@ -384,7 +395,7 @@ async def regenerate_translation_async(payload: TranslationRegenerateRequest):
                 raise ValueError("Station ou bulletin non trouvé pour cette date.")
         
         # Interpréteur partagé
-        interpreter = LanguageInterpreter.get_shared(core.db_manager)
+        interpreter = LanguageInterpreter.get_shared(core.services.db_manager)
         
         # Générer le texte français si nécessaire
         if payload.language in [None, "all", "interpretation_francais", "fr", "francais"]:
@@ -439,7 +450,7 @@ async def regenerate_translation_async(payload: TranslationRegenerateRequest):
         bulletin_type_detected = type_map.get(str(raw_type).lower(), "observation")
         
         # Mise à jour de la base de données
-        rows_updated = core.db_manager.update_bulletin_interpretations(
+        rows_updated = core.services.bulletins.update_bulletin_interpretations(
             payload.date,
             bulletin_type_detected,
             new_translations
@@ -451,7 +462,7 @@ async def regenerate_translation_async(payload: TranslationRegenerateRequest):
         station_snapshot["interpretation_francais"] = None
         station_snapshot["interpretation_moore"] = None
         station_snapshot["interpretation_dioula"] = None
-        core.db_manager.upsert_station_snapshot(target_pdf_path, station_snapshot)
+        core.services.bulletins.upsert_station_snapshot(target_pdf_path, station_snapshot)
         
         # Mise à jour du payload
         for entry in station_payloads:
@@ -466,7 +477,7 @@ async def regenerate_translation_async(payload: TranslationRegenerateRequest):
                         entry["stations"][i] = station_snapshot
                         break
                 
-                core.db_manager.upsert_bulletin_payload(target_pdf_path, entry)
+                core.services.bulletins.upsert_bulletin_payload(target_pdf_path, entry)
                 break
         
         # Nettoyer le cache
@@ -569,28 +580,197 @@ async def list_translation_tasks(
     }
 
 
-@router.delete("/bulletins/translation-task/{task_id}")
-async def cancel_translation_task(task_id: str):
+@router.get("/bulletins/{date}/translations", response_model=BulletinTranslationResponse)
+async def get_bulletin_translations(date: str):
     """
-    Annule une tâche de traduction en attente.
-    
-    Note: Les tâches déjà en cours d'exécution ne peuvent pas être annulées
-    car le modèle NLLB est déjà en train de générer.
+    Récupère les textes extraits et les traductions pour un bulletin spécifique.
     """
-    task_manager = get_task_manager()
-    success = task_manager.cancel_task(task_id)
+    _ensure_services_ready()
+    assert core.services is not None
     
-    if not success:
-        task = task_manager.get_task(task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail="Tâche introuvable.")
+    # Vérifier d'abord le cache
+    cache_key = f"bulletins:translations:{date}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+    
+    # Récupérer les données du bulletin
+    station_payloads = core.services.bulletins.list_payloads_by_date(date)
+    if not station_payloads:
         raise HTTPException(
-            status_code=400,
-            detail=f"Impossible d'annuler la tâche (statut actuel: {task.status.value})"
+            status_code=404,
+            detail={
+                "code": ErrorCode.BULLETIN_NOT_FOUND.value,
+                "message": f"No bulletin found for date {date}",
+            },
         )
     
+    # Extraire les textes français
+    french_texts = []
+    for entry in station_payloads:
+        if entry.get("interpretation_francais"):
+            french_texts.append(entry["interpretation_francais"])
+    
+    # Si aucun texte français trouvé, essayer d'en extraire un
+    if not french_texts:
+        from backend.modules.language_interpreter import LanguageInterpreter
+        interpreter = LanguageInterpreter.get_shared(core.services.db_manager)
+        
+        # Prendre la première station disponible
+        for entry in station_payloads:
+            if entry.get("stations"):
+                station = entry["stations"][0].copy()
+                station["pdf_path"] = entry.get("pdf_path")
+                station["date"] = date
+                french_text = interpreter._generate_french_bulletin(station)
+                if french_text:
+                    french_texts.append(french_text)
+                    break
+    
+    french_text = "\n\n".join(french_texts) if french_texts else None
+    
+    # Récupérer les traductions existantes
+    existing_bulletins = core.services.bulletins.list_summaries(limit=500)
+    moore_translation = None
+    dioula_translation = None
+    
+    for bulletin in existing_bulletins:
+        if bulletin.get("date") == date:
+            moore_translation = bulletin.get("interpretation_moore")
+            dioula_translation = bulletin.get("interpretation_dioula")
+            break
+    
+    # Construire la réponse
+    response = {
+        "date": date,
+        "french_text": french_text,
+        "moore_translation": moore_translation,
+        "dioula_translation": dioula_translation,
+        "extracted_at": datetime.now().isoformat(),
+        "translations": []
+    }
+    
+    # Ajouter les traductions individuelles si disponibles
+    if french_text:
+        if moore_translation:
+            response["translations"].append({
+                "language": "moore",
+                "text": moore_translation,
+                "source_text": french_text,
+                "translated_at": datetime.now().isoformat()
+            })
+        if dioula_translation:
+            response["translations"].append({
+                "language": "dioula",
+                "text": dioula_translation,
+                "source_text": french_text,
+                "translated_at": datetime.now().isoformat()
+            })
+    
+    _cache_set(cache_key, response)  # Cache using default TTL from config
+    return response
+
+
+@router.post("/bulletins/{date}/extract-text")
+async def extract_bulletin_text(date: str):
+    """
+    Force l'extraction du texte français d'un bulletin.
+    """
+    _ensure_services_ready()
+    assert core.services is not None
+    
+    station_payloads = core.services.bulletins.list_payloads_by_date(date)
+    if not station_payloads:
+        raise HTTPException(status_code=404, detail="Bulletin non trouvé pour cette date.")
+    
+    from backend.modules.language_interpreter import LanguageInterpreter
+    interpreter = LanguageInterpreter.get_shared(core.services.db_manager)
+    
+    extracted_texts = []
+    for entry in station_payloads:
+        if entry.get("stations"):
+            station = entry["stations"][0].copy()
+            station["pdf_path"] = entry.get("pdf_path")
+            station["date"] = date
+            french_text = interpreter._generate_french_bulletin(station)
+            if french_text:
+                extracted_texts.append(french_text)
+                # Mettre à jour dans la base
+                entry["interpretation_francais"] = french_text
+                core.services.bulletins.upsert_bulletin_payload(entry.get("pdf_path"), entry)
+    
+    combined_text = "\n\n".join(extracted_texts) if extracted_texts else None
+    
+    if not combined_text:
+        raise HTTPException(status_code=400, detail="Impossible d'extraire le texte du bulletin.")
+    
+    # Nettoyer le cache
+    _cache_clear(f"bulletins:translations:{date}")
+    _cache_clear(f"bulletins:detail:{date}:")
+    
     return {
-        "task_id": task_id,
-        "status": "cancelled",
-        "message": "Tâche annulée avec succès.",
+        "status": "success",
+        "date": date,
+        "extracted_text": combined_text,
+        "extracted_at": datetime.now().isoformat()
+    }
+
+
+@router.post("/bulletins/{date}/translate")
+async def translate_bulletin(date: str, languages: Optional[List[str]] = Query(["moore", "dioula"])):
+    """
+    Traduit un bulletin dans les langues spécifiées.
+    """
+    _ensure_services_ready()
+    assert core.services is not None
+    
+    # Vérifier que le texte français existe
+    response = await get_bulletin_translations(date)
+    french_text = response.french_text
+    
+    if not french_text:
+        # Essayer d'extraire le texte
+        extract_response = await extract_bulletin_text(date)
+        french_text = extract_response["extracted_text"]
+    
+    if not french_text:
+        raise HTTPException(status_code=400, detail="Impossible d'obtenir le texte français à traduire.")
+    
+    # Effectuer les traductions
+    from backend.modules.language_interpreter import LanguageInterpreter
+    interpreter = LanguageInterpreter.get_shared(core.services.db_manager)
+    
+    translations = {}
+    for lang in languages:
+        if lang in ["moore", "dioula"]:
+            translated = interpreter.translate(french_text, lang, force=True)
+            if translated:
+                translations[lang] = translated
+    
+    if not translations:
+        raise HTTPException(status_code=400, detail="Échec de toutes les traductions.")
+    
+    # Mettre à jour la base de données
+    bulletin_type = "observation"  # Par défaut
+    station_payloads = core.services.bulletins.list_payloads_by_date(date)
+    if station_payloads:
+        pdf_path = station_payloads[0].get("pdf_path")
+        if pdf_path and ("forecast" in pdf_path.lower() or "prevision" in pdf_path.lower()):
+            bulletin_type = "forecast"
+    
+    rows_updated = core.services.bulletins.update_bulletin_interpretations(
+        date,
+        bulletin_type,
+        {"fr": french_text, **translations}
+    )
+    
+    # Nettoyer le cache
+    _cache_clear(f"bulletins:translations:{date}")
+    _cache_clear(f"bulletins:detail:{date}:")
+    
+    return {
+        "status": "success",
+        "date": date,
+        "translations": translations,
+        "rows_updated": rows_updated
     }

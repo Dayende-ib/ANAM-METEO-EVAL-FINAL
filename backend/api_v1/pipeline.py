@@ -13,7 +13,7 @@ from backend.api_v1.models import (
     TempRetentionSettings
 )
 import backend.api_v1.core as core
-from backend.api_v1.core import _ensure_db_ready, _ensure_services_ready, ErrorCode, log_event
+from backend.api_v1.core import _ensure_services_ready, ErrorCode, log_event
 from backend.api_v1.utils import (
     _cache_clear,
     _serialize_pipeline_run,
@@ -30,14 +30,14 @@ router = APIRouter(tags=["pipeline"])
 @router.get("/settings/storage/retention", response_model=TempRetentionSettings)
 async def get_temp_retention_settings():
     """Return temp file retention settings."""
-    _ensure_db_ready()
+    _ensure_services_ready()
     return TempRetentionSettings(keep_days=_get_temp_retention_days())
 
 
 @router.post("/settings/storage/retention", response_model=TempRetentionSettings)
 async def update_temp_retention_settings(payload: TempRetentionSettings):
     """Update temp file retention settings."""
-    _ensure_db_ready()
+    _ensure_services_ready()
     _set_temp_retention_days(payload.keep_days)
     return TempRetentionSettings(keep_days=payload.keep_days)
 
@@ -46,8 +46,8 @@ async def update_temp_retention_settings(payload: TempRetentionSettings):
 async def trigger_pipeline_run(request: PipelineTriggerRequest, background_tasks: BackgroundTasks):
     """Trigger the full pipeline in background."""
     _ensure_services_ready()
-    assert core.db_manager is not None and core.config is not None
-    if core.db_manager.has_active_pipeline_run():
+    assert core.services is not None and core.config is not None
+    if core.services.pipeline.has_active_run():
         raise HTTPException(
             status_code=409,
             detail={
@@ -56,8 +56,8 @@ async def trigger_pipeline_run(request: PipelineTriggerRequest, background_tasks
             },
         )
     steps_template = PipelineRunner.build_steps_template()
-    run_id = core.db_manager.create_pipeline_run(steps_template)
-    runner = PipelineRunner(core.config, core.db_manager, run_id, options=request.dict())
+    run_id = core.services.pipeline.create_run(steps_template)
+    runner = PipelineRunner(core.config, core.services.db_manager, run_id, options=request.dict())
     background_tasks.add_task(run_in_threadpool, runner.run)
     _cache_clear("bulletins:")
     _cache_clear("metrics:")
@@ -67,18 +67,18 @@ async def trigger_pipeline_run(request: PipelineTriggerRequest, background_tasks
 @router.get("/pipeline/runs")
 async def list_pipeline_runs(limit: int = 20):
     """Return the latest recorded pipeline runs."""
-    _ensure_db_ready()
-    assert core.db_manager is not None
-    runs = core.db_manager.list_pipeline_runs(limit)
+    _ensure_services_ready()
+    assert core.services is not None
+    runs = core.services.pipeline.list_runs(limit)
     return {"runs": [_serialize_pipeline_run(run, include_steps=False) for run in runs]}
 
 
 @router.post("/pipeline/stop/{run_id}")
 async def stop_pipeline_run(run_id: int):
     """Stop an active pipeline run."""
-    _ensure_db_ready()
-    assert core.db_manager is not None
-    run = core.db_manager.get_pipeline_run(run_id)
+    _ensure_services_ready()
+    assert core.services is not None
+    run = core.services.pipeline.get_run(run_id)
     if not run:
         raise HTTPException(
             status_code=404,
@@ -95,16 +95,16 @@ async def stop_pipeline_run(run_id: int):
                 "message": "Seul un pipeline en cours peut être stoppé.",
             },
         )
-    core.db_manager.update_pipeline_run(run_id, status="cancelled", finished=True)
+    core.services.pipeline.update_run(run_id, status="cancelled", finished=True)
     return {"message": "Signal d'arrêt envoyé au pipeline."}
 
 
 @router.post("/pipeline/skip-step/{run_id}/{step_key}")
 async def skip_pipeline_step(run_id: int, step_key: str):
     """Mark a step to be skipped."""
-    _ensure_db_ready()
-    assert core.db_manager is not None
-    run = core.db_manager.get_pipeline_run(run_id)
+    _ensure_services_ready()
+    assert core.services is not None
+    run = core.services.pipeline.get_run(run_id)
     if not run:
         raise HTTPException(
             status_code=404,
@@ -140,16 +140,16 @@ async def skip_pipeline_step(run_id: int, step_key: str):
             },
         )
         
-    core.db_manager.update_pipeline_run(run_id, steps=steps)
+    core.services.pipeline.update_run(run_id, steps=steps)
     return {"message": f"Étape {step_key} marquée comme sautée."}
 
 
 @router.get("/pipeline/runs/{run_id}", response_model=PipelineRunDetail)
 async def get_pipeline_run(run_id: int):
     """Return detail for a specific pipeline run."""
-    _ensure_db_ready()
-    assert core.db_manager is not None
-    run = core.db_manager.get_pipeline_run(run_id)
+    _ensure_services_ready()
+    assert core.services is not None
+    run = core.services.pipeline.get_run(run_id)
     if not run:
         raise HTTPException(
             status_code=404,
@@ -164,12 +164,12 @@ async def get_pipeline_run(run_id: int):
 # Auto Pipeline logic
 async def _start_pipeline_run(options: Optional[Dict[str, Any]] = None) -> Optional[int]:
     _ensure_services_ready()
-    assert core.db_manager is not None and core.config is not None
-    if core.db_manager.has_active_pipeline_run():
+    assert core.services is not None and core.config is not None
+    if core.services.pipeline.has_active_run():
         return None
     steps_template = PipelineRunner.build_steps_template()
-    run_id = core.db_manager.create_pipeline_run(steps_template)
-    runner = PipelineRunner(core.config, core.db_manager, run_id, options=options or {})
+    run_id = core.services.pipeline.create_run(steps_template)
+    runner = PipelineRunner(core.config, core.services.db_manager, run_id, options=options or {})
     asyncio.create_task(run_in_threadpool(runner.run))
     return run_id
 

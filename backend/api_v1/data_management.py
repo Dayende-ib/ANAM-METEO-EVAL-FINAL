@@ -15,7 +15,7 @@ from backend.api_v1.models import (
     UploadBatchResponse, UploadBatchStatus
 )
 import backend.api_v1.core as core
-from backend.api_v1.core import _ensure_services_ready, _ensure_db_ready, ErrorCode
+from backend.api_v1.core import _ensure_services_ready, ErrorCode
 from backend.api_v1.utils import (
     _resolve_scrape_output_dir,
     _sanitize_filename,
@@ -167,27 +167,27 @@ async def upload_bulletin(
         return _serialize_temperature_payload(temperatures)
 
     def _enqueue_job(job_id: str, filename_value: str, pdf_path_value: str):
-        assert core.db_manager is not None
+        assert core.services is not None
 
         def job_runner():
             try:
-                core.db_manager.update_job(job_id, status="running")
+                core.services.jobs.update(job_id, status="running")
                 temperatures = extraction_task()
                 result = {
                     "filename": filename_value,
                     "pdf_path": pdf_path_value,
                     "temperatures": temperatures,
                 }
-                core.db_manager.update_job(job_id, status="success", result=result)
+                core.services.jobs.update(job_id, status="success", result=result)
             except Exception as exc:
-                core.db_manager.update_job(job_id, status="error", error_message=str(exc))
+                core.services.jobs.update(job_id, status="error", error_message=str(exc))
 
         background_tasks.add_task(run_in_threadpool, job_runner)
 
     if async_job:
-        assert core.db_manager is not None
+        assert core.services is not None
         job_id = str(uuid.uuid4())
-        core.db_manager.create_job(
+        core.services.jobs.create(
             job_id,
             "upload_bulletin",
             {"filename": filename, "pdf_path": str(target_path)},
@@ -226,7 +226,7 @@ async def upload_bulletins(
 ):
     """Téléverser plusieurs bulletins (PDF ou ZIP) et les traiter de manière asynchrone."""
     _ensure_services_ready()
-    assert core.config is not None and core.db_manager is not None
+    assert core.config is not None and core.services is not None
 
     batch_id = str(uuid.uuid4())
     jobs: List[UploadJobResponse] = []
@@ -294,7 +294,7 @@ async def upload_bulletins(
         job_id = str(uuid.uuid4())
         job_ids.append(job_id)
         filename_value = Path(pdf_path_value).name
-        core.db_manager.create_job(
+        core.services.jobs.create(
             job_id,
             "upload_bulletin",
             {"filename": filename_value, "pdf_path": pdf_path_value, "batch_id": batch_id},
@@ -302,11 +302,11 @@ async def upload_bulletins(
         def _make_job_runner(job_id_value: str, filename_value: str, pdf_path_value: str):
             def _run():
                 try:
-                    batch_job = core.db_manager.get_job(batch_id)
+                    batch_job = core.services.jobs.get(batch_id)
                     if batch_job and batch_job.get("status") == "canceled":
-                        core.db_manager.update_job(job_id_value, status="canceled", error_message="Batch canceled.")
+                        core.services.jobs.update(job_id_value, status="canceled", error_message="Batch canceled.")
                         return
-                    core.db_manager.update_job(job_id_value, status="running")
+                    core.services.jobs.update(job_id_value, status="running")
                     pdf_extractor = PDFExtractor(
                         core.config.pdf_directory,
                         core.config.output_directory
@@ -321,9 +321,9 @@ async def upload_bulletins(
                         "pdf_path": pdf_path_value,
                         "temperatures": _serialize_temperature_payload(temperatures),
                     }
-                    core.db_manager.update_job(job_id_value, status="success", result=result)
+                    core.services.jobs.update(job_id_value, status="success", result=result)
                 except Exception as exc:
-                    core.db_manager.update_job(job_id_value, status="error", error_message=str(exc))
+                    core.services.jobs.update(job_id_value, status="error", error_message=str(exc))
             return _run
 
         background_tasks.add_task(
@@ -339,7 +339,7 @@ async def upload_bulletins(
             }
         )
 
-    core.db_manager.create_job(
+    core.services.jobs.create(
         batch_id,
         "upload_batch",
         {"job_ids": job_ids, "total": len(job_ids)},
@@ -354,9 +354,9 @@ async def upload_bulletins(
 
 @router.get("/upload-bulletin/jobs/{job_id}", response_model=UploadJobStatus)
 async def get_upload_job(job_id: str = ApiPath(..., min_length=1)):
-    _ensure_db_ready()
-    assert core.db_manager is not None
-    job = core.db_manager.get_job(job_id)
+    _ensure_services_ready()
+    assert core.services is not None
+    job = core.services.jobs.get(job_id)
     if not job:
         raise HTTPException(
             status_code=404,
@@ -382,9 +382,9 @@ async def get_upload_job(job_id: str = ApiPath(..., min_length=1)):
 
 @router.get("/upload-bulletins/batches/{batch_id}", response_model=UploadBatchStatus)
 async def get_upload_batch(batch_id: str = ApiPath(..., min_length=1)):
-    _ensure_db_ready()
-    assert core.db_manager is not None
-    batch = core.db_manager.get_job(batch_id)
+    _ensure_services_ready()
+    assert core.services is not None
+    batch = core.services.jobs.get(batch_id)
     if not batch or batch.get("job_type") != "upload_batch":
         raise HTTPException(
             status_code=404,
@@ -395,7 +395,7 @@ async def get_upload_batch(batch_id: str = ApiPath(..., min_length=1)):
         )
     payload = batch.get("payload") or {}
     job_ids = payload.get("job_ids") or []
-    jobs_raw = core.db_manager.get_jobs(job_ids)
+    jobs_raw = core.services.jobs.get_many(job_ids)
     jobs_map = {job["id"]: job for job in jobs_raw}
     jobs: List[UploadJobStatus] = []
     counts = {"pending": 0, "running": 0, "success": 0, "error": 0, "canceled": 0}
@@ -450,9 +450,9 @@ async def get_upload_batch(batch_id: str = ApiPath(..., min_length=1)):
 
 @router.post("/upload-bulletins/batches/{batch_id}/stop")
 async def stop_upload_batch(batch_id: str = ApiPath(..., min_length=1)):
-    _ensure_db_ready()
-    assert core.db_manager is not None
-    batch = core.db_manager.get_job(batch_id)
+    _ensure_services_ready()
+    assert core.services is not None
+    batch = core.services.jobs.get(batch_id)
     if not batch or batch.get("job_type") != "upload_batch":
         raise HTTPException(
             status_code=404,
@@ -461,13 +461,13 @@ async def stop_upload_batch(batch_id: str = ApiPath(..., min_length=1)):
                 "message": "Batch not found.",
             },
         )
-    core.db_manager.update_job(batch_id, status="canceled", error_message="Canceled by user.")
+    core.services.jobs.update(batch_id, status="canceled", error_message="Canceled by user.")
     payload = batch.get("payload") or {}
     job_ids = payload.get("job_ids") or []
-    jobs = core.db_manager.get_jobs(job_ids)
+    jobs = core.services.jobs.get_many(job_ids)
     for job in jobs:
         if job.get("status") == "pending":
-            core.db_manager.update_job(job.get("id"), status="canceled", error_message="Batch canceled.")
+            core.services.jobs.update(job.get("id"), status="canceled", error_message="Batch canceled.")
     return {"batch_id": batch_id, "status": "canceled"}
 
 

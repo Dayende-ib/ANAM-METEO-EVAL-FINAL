@@ -7,6 +7,10 @@ import {
  stopUploadBatch,
  uploadBulletinsBatch,
  type UploadBatchStatus,
+ getBulletinTranslations,
+ extractBulletinText,
+ translateBulletin,
+ type BulletinTranslationResponse
 } from "../services/api";
 
 type TemperatureValue = {
@@ -164,6 +168,13 @@ export function UploadBulletinPage() {
  const [batchStatus, setBatchStatus] = useState<UploadBatchStatus | null>(null);
  const [batchLoading, setBatchLoading] = useState(false);
  const [batchError, setBatchError] = useState<string | null>(null);
+ 
+ // Nouveaux états pour les traductions
+ const [translations, setTranslations] = useState<BulletinTranslationResponse | null>(null);
+ const [translationLoading, setTranslationLoading] = useState(false);
+ const [translationError, setTranslationError] = useState<string | null>(null);
+ const [extractingText, setExtractingText] = useState(false);
+ const [translating, setTranslating] = useState(false);
 
  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
  if (e.target.files && e.target.files[0]) {
@@ -212,6 +223,7 @@ export function UploadBulletinPage() {
  setUploading(true);
  setError(null);
  setResult(null);
+ setTranslations(null); // Reset translations on new upload
 
  const formData = new FormData();
  formData.append("file", selectedFile);
@@ -230,6 +242,18 @@ export function UploadBulletinPage() {
   throw new Error(message);
   }
   setResult(data);
+  
+  // Après un upload réussi, essayer de récupérer les traductions existantes
+  if (data.filename) {
+    try {
+      const dateFromFilename = extractDateFromFilename(data.filename);
+      if (dateFromFilename) {
+        await loadTranslations(dateFromFilename);
+      }
+    } catch (err) {
+      console.warn("Impossible de charger les traductions:", err);
+    }
+  }
  } catch (err) {
   const message = err instanceof Error ? err.message : "Erreur inattendue lors de l'upload.";
   reportError(message);
@@ -240,8 +264,73 @@ export function UploadBulletinPage() {
  }
  };
 
+ // Fonction utilitaire pour extraire la date du nom de fichier
+ const extractDateFromFilename = (filename: string): string | null => {
+   // Exemple: Bulletin_du_07_Decembre__2025_a_18h00_kDP4jKL.pdf
+   const match = filename.match(/Bulletin_du_(\d{1,2})_([a-zA-Zéû]+)__?(\d{4})/i);
+   if (match) {
+     const [, day, monthStr, year] = match;
+     const months: Record<string, string> = {
+       'janvier': '01', 'fevrier': '02', 'février': '02', 'mars': '03', 'avril': '04',
+       'mai': '05', 'juin': '06', 'juillet': '07', 'août': '08', 'aout': '08',
+       'septembre': '09', 'octobre': '10', 'novembre': '11', 'decembre': '12', 'décembre': '12'
+     };
+     const month = months[monthStr.toLowerCase()];
+     if (month) {
+       return `${year}-${month}-${day.padStart(2, '0')}`;
+     }
+   }
+   return null;
+ };
+
+ // Charger les traductions existantes
+ const loadTranslations = async (date: string) => {
+   setTranslationLoading(true);
+   setTranslationError(null);
+   try {
+     const data = await getBulletinTranslations(date);
+     setTranslations(data);
+   } catch (err) {
+     const message = err instanceof Error ? err.message : "Erreur lors du chargement des traductions";
+     setTranslationError(message);
+   } finally {
+     setTranslationLoading(false);
+   }
+ };
+
+ // Extraire le texte français
+ const handleExtractText = async (date: string) => {
+   setExtractingText(true);
+   setTranslationError(null);
+   try {
+     const response = await extractBulletinText(date);
+     // Recharger les traductions après extraction
+     await loadTranslations(date);
+   } catch (err) {
+     const message = err instanceof Error ? err.message : "Erreur lors de l'extraction du texte";
+     setTranslationError(message);
+   } finally {
+     setExtractingText(false);
+   }
+ };
+
+ // Traduire dans les langues demandées
+ const handleTranslate = async (date: string, languages: string[] = ['moore', 'dioula']) => {
+   setTranslating(true);
+   setTranslationError(null);
+   try {
+     const response = await translateBulletin(date, languages);
+     // Recharger les traductions après traduction
+     await loadTranslations(date);
+   } catch (err) {
+     const message = err instanceof Error ? err.message : "Erreur lors de la traduction";
+     setTranslationError(message);
+   } finally {
+     setTranslating(false);
+   }
+ };
+
  const handleBatchUpload = async () => {
- if (batchFiles.length === 0) return;
  setBatchLoading(true);
  setBatchError(null);
  try {
@@ -663,6 +752,91 @@ export function UploadBulletinPage() {
    </div>
    {renderTemperatures()}
   </div>
+
+  {/* Section des traductions */}
+  {result && translations && (
+   <div className="space-y-6 mt-8 pt-6 border-t border-[var(--border)]">
+    <div className="flex flex-wrap justify-between items-center gap-4">
+     <h2 className="text-ink text-[22px] font-bold leading-tight tracking-[-0.015em]">
+      Textes extraits et traductions
+     </h2>
+     <div className="flex gap-2">
+      <button
+       onClick={() => handleExtractText(extractDateFromFilename(result.filename) || '')}
+       disabled={extractingText}
+       className="rounded-lg bg-blue-500 hover:bg-blue-600 disabled:opacity-50 px-3 py-1.5 text-sm text-white transition-colors"
+      >
+       {extractingText ? 'Extraction...' : 'Extraire le texte'}
+      </button>
+      <button
+       onClick={() => {
+         const date = extractDateFromFilename(result.filename);
+         if (date) handleTranslate(date);
+       }}
+       disabled={translating}
+       className="rounded-lg bg-green-500 hover:bg-green-600 disabled:opacity-50 px-3 py-1.5 text-sm text-white transition-colors"
+      >
+       {translating ? 'Traduction...' : 'Traduire'}
+      </button>
+     </div>
+    </div>
+
+    {translationError && (
+     <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-300">
+      {translationError}
+     </div>
+    )}
+
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+     {/* Texte français */}
+     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="flex items-center justify-between mb-3">
+       <h3 className="text-lg font-semibold text-ink">Français</h3>
+       <span className="text-xs text-muted">
+        {translations.extracted_at ? `Extrait le ${new Date(translations.extracted_at).toLocaleDateString('fr-FR')}` : 'Non extrait'}
+       </span>
+      </div>
+      <div className="prose prose-sm max-w-none">
+       {translations.french_text ? (
+        <p className="text-ink whitespace-pre-wrap">{translations.french_text}</p>
+       ) : (
+        <p className="text-muted italic">Aucun texte français extrait</p>
+       )}
+      </div>
+     </div>
+
+     {/* Traduction Moore */}
+     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="flex items-center justify-between mb-3">
+       <h3 className="text-lg font-semibold text-ink">Moré</h3>
+       <span className="text-xs text-muted">Traduction</span>
+      </div>
+      <div className="prose prose-sm max-w-none">
+       {translations.moore_translation ? (
+        <p className="text-ink whitespace-pre-wrap">{translations.moore_translation}</p>
+       ) : (
+        <p className="text-muted italic">Pas encore traduit</p>
+       )}
+      </div>
+     </div>
+
+     {/* Traduction Dioula */}
+     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="flex items-center justify-between mb-3">
+       <h3 className="text-lg font-semibold text-ink">Dioula</h3>
+       <span className="text-xs text-muted">Traduction</span>
+      </div>
+      <div className="prose prose-sm max-w-none">
+       {translations.dioula_translation ? (
+        <p className="text-ink whitespace-pre-wrap">{translations.dioula_translation}</p>
+       ) : (
+        <p className="text-muted italic">Pas encore traduit</p>
+       )}
+      </div>
+     </div>
+    </div>
+   </div>
+  )}
   </div>
  </Layout>
  );

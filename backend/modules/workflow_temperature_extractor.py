@@ -115,9 +115,9 @@ class WorkflowTemperatureExtractor(TemperatureExtractor):
                     
         return matched
 
-    # Méthodes Roboflow désactivées - renvoient des résultats vides
+    # Méthodes héritées désactivées - renvoient des résultats vides
     def _load_workflow_from_disk(self, image_path):
-        """Désactivé - ne charge plus les prédictions Roboflow."""
+        """Désactivé - ne charge plus de prédictions externes."""
         return None
 
     def _extract_temperatures_from_workflow_map(self, image_path, workflow_result, map_bbox):
@@ -125,7 +125,7 @@ class WorkflowTemperatureExtractor(TemperatureExtractor):
         return self._extract_temperatures_from_rois(image_path)
 
     def _extract_city_candidates(self, image, predictions):
-        """Désactivé - pas nécessaire sans Roboflow."""
+        """Désactivé - pas nécessaire pour l'approche ROI locale."""
         return []
 
     def _ocr_city_name(self, crop):

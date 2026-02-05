@@ -4,39 +4,21 @@
 """Classification des icones meteo issues des cartes ANAM."""
 
 import json
-import math
 import os
-import re
-import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 
 import cv2
 import numpy as np
-import pytesseract
 
-try:
-    from inference_sdk import InferenceHTTPClient
-except ImportError:  # pragma: no cover - handled gracefully at runtime
-    InferenceHTTPClient = None
-
-from backend.modules.workflow_utils import extract_predictions, normalize_workflow_response, prediction_to_bbox
 
 class IconClassifier:
-    """Utilise Roboflow (ou un fallback local) pour classifier les icônes station par station."""
+    """Classifie les icônes météo via templates/ROI et heuristiques locales."""
 
     def __init__(
         self,
-        api_key=None,
-        model_id=None,
-        api_url=None,
         roi_config_path=None,
         template_directory=None,
     ):
-        self.api_key = api_key or os.getenv("ROBOFLOW_API_KEY")
-        self.model_id = model_id or os.getenv("ROBOFLOW_MODEL_ID")
-        self.api_url = api_url or os.getenv("ROBOFLOW_API_URL", "https://detect.roboflow.com")
-
         self.weather_conditions = {
             "ensoleille": "ensoleillé",
             "soleil": "ensoleillé",
@@ -69,12 +51,6 @@ class IconClassifier:
             "poussière",
         }
         self.template_threshold = 0.6
-        self.api_detection_weight = 0.9
-        self.workflow_assoc_max_dist = int(os.getenv("WORKFLOW_ASSOCIATION_MAX_DIST_PX", "120"))
-        self.roboflow_timeout = float(os.getenv("ROBOFLOW_TIMEOUT_SECONDS", "30"))
-        self.roboflow_retries = int(os.getenv("ROBOFLOW_RETRIES", "2"))
-        self.roboflow_backoff = float(os.getenv("ROBOFLOW_BACKOFF_SECONDS", "1.0"))
-        self.client = None
         self.roi_config = self._load_roi_config(roi_config_path)
         self.template_directory = (
             Path(template_directory)
@@ -82,7 +58,6 @@ class IconClassifier:
             else Path(__file__).parent.parent / "resources" / "templates" / "icons"
         )
         self.icon_templates = self._load_icon_templates(self.template_directory)
-        self._init_roboflow_client()
 
     # ------------------------------------------------------------------ #
     # Chargement des ressources
@@ -153,13 +128,8 @@ class IconClassifier:
             return label
         return None
 
-    def _init_roboflow_client(self):
-        """Initialise le client Roboflow si la configuration est disponible (DÉSACTIVÉ)."""
-        self.client = None
-        return
-
     # ------------------------------------------------------------------ #
-    # Détection via API ou fallback
+    # Détection locale
     # ------------------------------------------------------------------ #
     def preprocess_icon_region(self, image_path, enhance=True):
         """Charge et prétraite l'image avec amélioration optionnelle."""
@@ -311,49 +281,6 @@ class IconClassifier:
         # Variance du LBP comme indicateur de texture
         return float(np.std(lbp) / 255.0)
 
-    def _detect_icons_with_roboflow(self, image_path):
-        """Lance l'inférence Roboflow et retourne les prédictions."""
-        if self.client is None:
-            return []
-
-        def _infer():
-            return self.client.infer(str(image_path), model_id=self.model_id)
-
-        for attempt in range(self.roboflow_retries + 1):
-            try:
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(_infer)
-                    result = future.result(timeout=self.roboflow_timeout)
-                return result.get("predictions", []) if isinstance(result, dict) else []
-            except TimeoutError:
-                print("Délai d'attente (timeout) Roboflow dépassé lors de la détection.")
-            except Exception as exc:
-                print(f"Erreur Roboflow lors de la détection des icônes : {exc}")
-            if attempt < self.roboflow_retries:
-                time.sleep(self.roboflow_backoff * (attempt + 1))
-        return []
-
-    def _prediction_to_icon(self, prediction):
-        """Convertit une prédiction Roboflow en structure utilisable par l'intégrateur."""
-        pred_class = prediction.get("class")
-        weather_condition = self.weather_conditions.get(pred_class, pred_class)
-
-        width = prediction.get("width") or 0
-        height = prediction.get("height") or 0
-        center_x = prediction.get("x") or 0
-        center_y = prediction.get("y") or 0
-
-        local_x = int(center_x - width / 2)
-        local_y = int(center_y - height / 2)
-        bbox = (local_x, local_y, int(width), int(height))
-
-        return {
-            "bbox": bbox,
-            "weather_condition": weather_condition,
-            "confidence": float(prediction.get("confidence", self.api_detection_weight)),
-            "raw_label": pred_class,
-        }
-
     def _classify_roi_crop(self, crop_gray):
         """Essaye les modèles (templates) puis l'heuristique sur un extrait en niveaux de gris."""
         template_condition, template_score = self._compare_with_templates(crop_gray)
@@ -362,7 +289,7 @@ class IconClassifier:
         return self.classify_icon_simple(crop_gray)
 
     def _fallback_classification(self, image_path):
-        """Plan de secours heuristique lorsque Roboflow et les modèles sont indisponibles."""
+        """Plan de secours heuristique lorsque les modèles sont indisponibles."""
         try:
             icon_image = self.preprocess_icon_region(image_path)
             condition, confidence = self.classify_icon_simple(icon_image)
@@ -421,59 +348,6 @@ class IconClassifier:
             all_icons.append(pdf_icons_data)
 
         return all_icons
-
-    def classify_icons_from_workflow(self, pdf_results):
-        """Utilise les detections Roboflow (symbol/ville) si disponibles."""
-        all_icons = []
-
-        for pdf_result in pdf_results:
-            pdf_icons_data = {
-                "pdf_path": pdf_result["pdf_path"],
-                "data": [],
-            }
-
-            for map_data in pdf_result.get("maps", []):
-                map_type = map_data.get("type")
-                map_image_path = map_data.get("image_path", pdf_result.get("image_path"))
-
-                icons = []
-                workflow_result = map_data.get("workflow_result")
-                if not workflow_result:
-                    workflow_result = self._load_workflow_from_disk(map_image_path)
-                if workflow_result:
-                    icons = self._classify_icons_from_workflow_map(map_image_path, workflow_result)
-
-                if not icons:
-                    icons = self.classify_icons_in_map(map_image_path)
-
-                pdf_icons_data["data"].append(
-                    {
-                        "type": map_type,
-                        "icons": icons,
-                    }
-                )
-
-            all_icons.append(pdf_icons_data)
-
-        return all_icons
-
-    def _load_workflow_from_disk(self, image_path):
-        if not image_path:
-            return None
-        try:
-            image_path = Path(image_path)
-        except Exception:
-            return None
-        predictions_dir = image_path.parent.parent / "roboflow_predictions"
-        output_path = predictions_dir / f"{image_path.stem}_workflow.json"
-        if not output_path.exists():
-            return None
-        try:
-            payload = json.loads(output_path.read_text(encoding="utf-8"))
-        except Exception:
-            return None
-        return payload.get("result", payload)
-
     # ------------------------------------------------------------------ #
     # Détection basée sur les ROI / modèles
     # ------------------------------------------------------------------ #
@@ -509,116 +383,6 @@ class IconClassifier:
             )
         return icons
 
-    def _classify_icons_from_workflow_map(self, image_path, workflow_result):
-        image = cv2.imread(str(image_path))
-        if image is None:
-            return []
-
-        normalized = normalize_workflow_response(workflow_result)
-        predictions = extract_predictions(normalized)
-        if not predictions:
-            return []
-
-        city_candidates = self._extract_city_candidates(image, predictions)
-        symbol_preds = [pred for pred in predictions if pred.get("class") == "symbol"]
-        if not symbol_preds:
-            return []
-
-        icons = []
-        for pred in symbol_preds:
-            bbox = prediction_to_bbox(pred)
-            if not bbox:
-                continue
-            crop = self._crop_bbox(image, bbox)
-            if crop is None:
-                continue
-            gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-            weather_condition, score = self._classify_roi_crop(gray)
-            detection_conf = float(pred.get("confidence", 0.0) or 0.0)
-            confidence = round(min(1.0, (score + detection_conf) / 2.0), 3)
-            name = self._match_nearest_city(bbox, city_candidates)
-            if not name and self.roi_config:
-                name = self._match_station_by_icon_roi(bbox)
-            icons.append(
-                {
-                    "name": name,
-                    "bbox": bbox,
-                    "weather_condition": weather_condition,
-                    "confidence": confidence,
-                    "raw_label": pred.get("class"),
-                }
-            )
-
-        return icons
-
-    def _extract_city_candidates(self, image, predictions):
-        cities = []
-        for pred in predictions:
-            if pred.get("class") != "ville":
-                continue
-            bbox = prediction_to_bbox(pred)
-            if not bbox:
-                continue
-            crop = self._crop_bbox(image, bbox)
-            if crop is None:
-                continue
-            name = self._ocr_city_name(crop)
-            if not name:
-                continue
-            cx, cy = self._bbox_center(bbox)
-            cities.append({"name": name, "bbox": bbox, "center": (cx, cy)})
-        return cities
-
-    def _ocr_city_name(self, crop):
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LINEAR)
-        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        try:
-            text = pytesseract.image_to_string(
-                thresh,
-                config="--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-' ",
-            )
-        except Exception:
-            return None
-        clean = re.sub(r"[^A-Za-z' -]", "", text or "").strip()
-        if len(clean) < 2:
-            return None
-        return clean
-
-    def _match_nearest_city(self, bbox, cities):
-        if not cities:
-            return None
-        cx, cy = self._bbox_center(bbox)
-        best = None
-        best_dist = None
-        for city in cities:
-            dist = math.hypot(cx - city["center"][0], cy - city["center"][1])
-            if best is None or dist < best_dist:
-                best = city
-                best_dist = dist
-        if best is None:
-            return None
-        if best_dist is not None and best_dist > self.workflow_assoc_max_dist:
-            return None
-        return best["name"]
-
-    def _match_station_by_icon_roi(self, bbox):
-        if not self.roi_config:
-            return None
-        cx, cy = self._bbox_center(bbox)
-        for station, rois in self.roi_config.items():
-            icon_roi = rois.get("icon_roi")
-            if not icon_roi:
-                continue
-            x1, y1, x2, y2 = [int(v) for v in icon_roi]
-            if x1 <= cx <= x2 and y1 <= cy <= y2:
-                return station
-        return None
-
-    @staticmethod
-    def _bbox_center(bbox):
-        x, y, w, h = bbox
-        return (x + w / 2.0, y + h / 2.0)
 
     @staticmethod
     def _crop_bbox(image, bbox):

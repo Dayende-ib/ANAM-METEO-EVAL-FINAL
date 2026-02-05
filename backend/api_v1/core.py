@@ -10,6 +10,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional dependency
+    load_dotenv = None
+
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -23,14 +28,26 @@ from backend.api_errors import (
 )
 from backend.utils.config import Config
 from backend.utils.database import DatabaseManager
+from backend.services.container import ServiceContainer
+
+# Load .env early so module-level settings reflect it.
+def _load_env() -> None:
+    if load_dotenv is None:
+        return
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+
+_load_env()
 
 # Global state
 config: Optional[Config] = None
 db_manager: Optional[DatabaseManager] = None
 result_file: Optional[Path] = None
+services: Optional[ServiceContainer] = None
 
 # Security/Auth constants
-AUTH_SECRET = os.getenv("AUTH_SECRET", "change-this-secret")
+AUTH_SECRET = os.getenv("AUTH_SECRET", "changer-laPhrase-secrete!")
 AUTH_USERNAME = os.getenv("AUTH_USERNAME")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD")
 TOKEN_VALIDITY_SECONDS = 30 * 24 * 60 * 60  # 30 days
@@ -163,7 +180,7 @@ def _ensure_db_ready():
         )
 
 def _ensure_services_ready():
-    if config is None or db_manager is None:
+    if config is None or db_manager is None or services is None:
         raise HTTPException(
             status_code=503,
             detail={

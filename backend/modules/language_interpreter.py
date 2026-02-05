@@ -161,22 +161,14 @@ class LanguageInterpreter:
         self.interpretation_cache = InterpretationCache(db_manager)
         self.target_languages = list(self.translation_languages.keys())
 
-        # --- Configuration Gradio / Remote (Correction crash) ---
+        # --- Configuration Modèle Local Uniquement ---
         self.translation_client = None
         self.translation_source_label = self._resolve_lang_label(self.translation_source)
         self.translation_target_labels = {
             lang: self._resolve_lang_label(code)
             for lang, code in self.translation_languages.items()
         }
-        self.translation_api_name = os.getenv("TRANSLATION_GRADIO_API_NAME", "/translate")
-
-        remote_repo = os.getenv("TRANSLATION_GRADIO_REPO")
-        if remote_repo and Client:
-            try:
-                self.translation_client = Client(remote_repo)
-                logger.info(f"✅ Traduction distante activée via {remote_repo}")
-            except Exception as exc:
-                logger.warning(f"Impossible de connecter le client Gradio: {exc}")
+        logger.info("ℹ️ Mode Traduction Local Uniquement activé (NLLB)")
 
     @classmethod
     def get_shared(cls, db_manager: Optional[DatabaseManager] = None) -> "LanguageInterpreter":
@@ -604,34 +596,7 @@ class LanguageInterpreter:
                 )
                 return cached
 
-        target_label = self.translation_target_labels.get(language)
-        if self.translation_client and target_label and self.translation_source_label:
-            try:
-                result = self.translation_client.predict(
-                    text=text,
-                    src_lang=self.translation_source_label,
-                    tgt_lang=target_label,
-                    api_name=self.translation_api_name,
-                )
-                if result:
-                    translated = str(result).strip()
-                    self.translation_cache.store(language, text, translated, "gradio_nllb")
-                    _log_json(
-                        logging.INFO,
-                        "translation_success",
-                        provider="gradio_nllb",
-                        language=language,
-                    )
-                    return translated
-            except Exception as exc:
-                _log_json(
-                    logging.WARNING,
-                    "translation_error",
-                    provider="gradio_nllb",
-                    language=language,
-                    error=str(exc),
-                )
-
+        # Traduction locale uniquement (NLLB)
         translated = self._translate_local(text, language)
         if translated:
             self.translation_cache.store(language, text, translated, "local_nllb")

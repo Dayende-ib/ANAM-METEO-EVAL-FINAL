@@ -38,6 +38,7 @@ from backend.api_v1.core import (
 )
 from backend.utils.config import Config
 from backend.utils.database import DatabaseManager
+from backend.services.container import ServiceContainer
 
 # Import des routeurs
 from backend.api_v1.auth import router as auth_router
@@ -128,6 +129,7 @@ async def startup_event():
     core.db_manager = DatabaseManager(core.config.db_path)
     core.db_manager.initialize_database()
     core.result_file = core.config.output_directory / "resultats_interpretes.json"
+    core.services = ServiceContainer(core.db_manager, core.config)
     
     # Note : Le modèle NLLB sera chargé à la demande (lazy loading) pour économiser la RAM au démarrage
 
@@ -159,6 +161,7 @@ async def shutdown_event():
         cleanup_task.cancel()
     if core.db_manager:
         core.db_manager.close()
+    core.services = None
     
     # Arrêter proprement le gestionnaire de tâches en arrière-plan
     from backend.utils.background_tasks import shutdown_task_manager

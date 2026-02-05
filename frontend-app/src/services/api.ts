@@ -813,3 +813,59 @@ export async function cancelTranslationTask(taskId: string) {
     method: "DELETE",
   });
 }
+
+// Types pour les nouvelles fonctionnalités de traduction
+export type TranslationResult = {
+  language: string;
+  text: string;
+  translated_at: string;
+  source_text: string;
+};
+
+export type BulletinTranslationResponse = {
+  date: string;
+  french_text: string | null;
+  moore_translation: string | null;
+  dioula_translation: string | null;
+  extracted_at: string | null;
+  translations: TranslationResult[];
+};
+
+// Services de traduction
+export async function getBulletinTranslations(date: string): Promise<BulletinTranslationResponse> {
+  return requestJson<BulletinTranslationResponse>(`/bulletins/${encodeURIComponent(date)}/translations`);
+}
+
+export async function extractBulletinText(date: string): Promise<{ 
+  status: string; 
+  date: string; 
+  extracted_text: string; 
+  extracted_at: string 
+}> {
+  return postJson<{ 
+    status: string; 
+    date: string; 
+    extracted_text: string; 
+    extracted_at: string 
+  }>(`/bulletins/${encodeURIComponent(date)}/extract-text`, {});
+}
+
+export async function translateBulletin(
+  date: string, 
+  languages: string[] = ['moore', 'dioula']
+): Promise<{ 
+  status: string; 
+  date: string; 
+  translations: Record<string, string>;
+  rows_updated: number;
+}> {
+  const params = new URLSearchParams();
+  languages.forEach(lang => params.append('languages', lang));
+  
+  return postJson<{ 
+    status: string; 
+    date: string; 
+    translations: Record<string, string>;
+    rows_updated: number;
+  }>(`/bulletins/${encodeURIComponent(date)}/translate?${params}`, {});
+}
