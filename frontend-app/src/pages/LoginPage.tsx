@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import logoANAM from "../assets/logoANAMoriginal.png";
 
 const THEME_KEY = "anam-theme";
 
@@ -102,15 +103,22 @@ export function LoginPage() {
 
       {/* ===== HEADER ===== */}
       <header className="relative z-20 flex items-center justify-between px-6 py-4">
-        <button
-          onClick={() => navigate("/")}
-          className="flex items-center gap-3 group"
-        >
-          <div className="flex items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-secondary-600 size-10 shadow-lg shadow-primary-500/20 group-hover:scale-105 transition-transform">
-            <span className="material-symbols-outlined text-white text-xl">wb_sunny</span>
-          </div>
-          <span className="text-lg font-bold text-ink font-display">ANAM Meteo-Eval</span>
+        <div className="flex items-center gap-4">
+          {/* Back button */}
+          <button
+            onClick={() => navigate("/")}
+            className="flex items-center justify-center size-10 rounded-full bg-[var(--surface)] border border-[var(--border)] text-ink hover:bg-[var(--canvas-strong)] transition-colors shadow-sm"
+            aria-label="Retour a l'accueil"
+          >
+            <span className="material-symbols-outlined text-lg">arrow_back</span>
+          </button>
+          <button
+            onClick={() => navigate("/")}
+            className="flex items-center group"
+          >
+          <img src={logoANAM} alt="ANAM Logo" className="h-12 object-contain group-hover:scale-105 transition-transform" />
         </button>
+        </div>
         <button
           type="button"
           onClick={() => {
@@ -128,7 +136,7 @@ export function LoginPage() {
 
       {/* ===== MAIN CONTENT ===== */}
       <main className="relative z-10 flex items-center justify-center min-h-[calc(100vh-80px)] px-4">
-        <div className="w-full max-w-md animate-rise">
+        <div className="w-full max-w-xl animate-rise">
           {/* Login Card */}
           <div className="relative">
             {/* Card glow effect */}

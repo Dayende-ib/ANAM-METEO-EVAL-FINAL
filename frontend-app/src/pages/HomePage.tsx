@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchBulletins, type BulletinSummary } from "../services/api";
+import logoANAM from "../assets/logoANAMoriginal.png";
 
 const THEME_KEY = "anam-theme";
 
@@ -105,11 +106,8 @@ export function HomePage() {
       {/* ===== HEADER / NAV ===== */}
       <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-secondary-600 size-9 shadow-lg shadow-primary-500/20">
-              <span className="material-symbols-outlined text-white text-lg">wb_sunny</span>
-            </div>
-            <span className="text-lg font-bold text-ink font-display">ANAM Météo-Eval</span>
+          <div className="flex items-center">
+            <img src={logoANAM} alt="ANAM Logo" className="h-12 object-contain" />
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -384,10 +382,7 @@ export function HomePage() {
       <footer className="border-t border-[var(--border)] bg-[var(--surface)]/60">
         <div className="mx-auto max-w-6xl px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-sm text-muted">
-            <div className="flex items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-secondary-600 size-6">
-              <span className="material-symbols-outlined text-white text-sm">wb_sunny</span>
-            </div>
-            <span className="font-display font-semibold text-ink">ANAM Météo-Eval</span>
+            <img src={logoANAM} alt="ANAM Logo" className="h-8 object-contain" />
             <span className="text-muted">&middot; {new Date().getFullYear()}</span>
           </div>
           <p className="text-xs text-muted">Hackathon MTDPCE 2025 &middot; Burkina Faso</p>

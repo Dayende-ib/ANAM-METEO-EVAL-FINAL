@@ -1,5 +1,6 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { NAV_ITEMS, type NavItem } from "../navigation";
+import logoANAM from "../assets/logoANAMoriginal.png";
 
 type SidebarProps = {
   navItems?: NavItem[];
@@ -17,22 +18,22 @@ export function Sidebar({
   onDesktopToggle,
 }: SidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const navigationContent = (
     <>
-      <div className="flex items-center gap-3 p-6 border-b border-[var(--border)]">
-        <div className="relative">
-          <div className="bg-gradient-to-br from-primary-500 to-secondary-600 rounded-2xl size-12 flex items-center justify-center shadow-lg">
-            <span className="material-symbols-outlined text-white text-2xl">wb_sunny</span>
-          </div>
-          <div className="absolute -top-1 -right-1 size-4 bg-accent-400 rounded-full border-2 border-[var(--surface)]"></div>
-        </div>
-        <div className="flex flex-col">
-          <h1 className="text-ink text-lg font-semibold leading-tight font-display">ANAM Météo</h1>
-          <p className="text-muted text-xs font-normal">Console Opérations</p>
-        </div>
+      <div className="flex items-center justify-center p-6 border-b border-[var(--border)]">
+        <img src={logoANAM} alt="ANAM Logo" className="h-16 object-contain" />
       </div>
       <nav className="flex flex-col gap-1 p-4 flex-grow overflow-y-auto">
+        {/* Back to home button */}
+        <button
+          onClick={() => navigate("/")}
+          className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-[var(--canvas-strong)] text-muted mb-2"
+        >
+          <span className="material-symbols-outlined">home</span>
+          <p className="text-sm font-medium leading-normal">Retour a l'accueil</p>
+        </button>
         {navItems.map((item) => {
           const isActive = location.pathname === item.to;
           return (

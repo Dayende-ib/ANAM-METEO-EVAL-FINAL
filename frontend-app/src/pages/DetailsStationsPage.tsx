@@ -339,12 +339,10 @@ export function DetailsStationsPage() {
                       style={{ width: `${100 / cardsPerView}%` }}
                     >
                       <button
-                        onClick={() =>
-                          setExpandedStation(expandedStation?.id === station.id ? null : station)
-                        }
+                        onClick={() => setExpandedStation(station)}
                         className={`w-full text-left surface-panel soft p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
                           expandedStation?.id === station.id
-                            ? "ring-2 ring-primary-500 shadow-xl -translate-y-1"
+                            ? "!border-2 !border-primary-500 shadow-xl -translate-y-1"
                             : ""
                         }`}
                       >
