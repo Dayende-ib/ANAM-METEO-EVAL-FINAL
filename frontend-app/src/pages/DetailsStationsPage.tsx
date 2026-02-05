@@ -468,139 +468,34 @@ export function DetailsStationsPage() {
           </div>
         )}
 
-        {/* ── Expanded detail panel – three-column multilingual ── */}
+        {/* ── Expanded detail panel – horizontal multilingual layout ── */}
         {expandedStation &&
           (() => {
-            const wInfo = getWeatherIcon(
-              expandedStation.weather_obs || expandedStation.weather_prev,
-            );
-            const qBadge = getQualityBadge(expandedStation.quality_score);
-
             /* ── Multilingual labels ── */
             type LangLabels = {
-              tmax_obs: string;
-              tmin_obs: string;
-              tmax_prev: string;
-              tmin_prev: string;
-              meteo: string;
-              qualite: string;
               interp_station: string;
               interp_bulletin: string;
               no_interp: string;
             };
             const LABELS: Record<string, LangLabels> = {
               Français: {
-                tmax_obs: "Tmax observation",
-                tmin_obs: "Tmin observation",
-                tmax_prev: "Tmax prévision",
-                tmin_prev: "Tmin prévision",
-                meteo: "Météo",
-                qualite: "Qualité",
                 interp_station: "Interprétation station",
                 interp_bulletin: "Interprétation bulletin",
                 no_interp: "Aucune interprétation disponible",
               },
               Mooré: {
-                tmax_obs: "Zĩ tʋʋl-nif (gẽusgo)",
-                tmin_obs: "Zĩ tʋʋl-yʋʋddd (gẽusgo)",
-                tmax_prev: "Zĩ tʋʋl-nif (pẽndgo)",
-                tmin_prev: "Zĩ tʋʋl-yʋʋddd (pẽndgo)",
-                meteo: "Sasa wã wẽenem",
-                qualite: "Sõmblem",
                 interp_station: "Stasõ wã bãngre",
                 interp_bulletin: "Kibar wã bãngre",
                 no_interp: "Bãngr ka be ye",
               },
               Dioula: {
-                tmax_obs: "Funteni belebele (lajɛli)",
-                tmin_obs: "Nɛnɛ fitinin (lajɛli)",
-                tmax_prev: "Funteni belebele (kɔfɔli)",
-                tmin_prev: "Nɛnɛ fitinin (kɔfɔli)",
-                meteo: "Waakati",
-                qualite: "Ɲumanya",
                 interp_station: "Stasɔn kɔrɔfɔli",
                 interp_bulletin: "Kibaru kɔrɔfɔli",
                 no_interp: "Kɔrɔfɔli tɛ yen",
               },
             };
 
-            const MetricGrid = ({ labels }: { labels: LangLabels }) => (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-[var(--canvas-strong)] p-3">
-                  <p className="text-xs uppercase tracking-widest text-ink/70 font-semibold mb-1.5">
-                    {labels.tmax_obs}
-                  </p>
-                  <p
-                    className={`text-lg font-bold font-mono ${getTempColor(expandedStation.tmax_obs)}`}
-                  >
-                    {expandedStation.tmax_obs != null
-                      ? `${expandedStation.tmax_obs.toFixed(1)}°C`
-                      : "--"}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-[var(--canvas-strong)] p-3">
-                  <p className="text-xs uppercase tracking-widest text-ink/70 font-semibold mb-1.5">
-                    {labels.tmin_obs}
-                  </p>
-                  <p
-                    className={`text-lg font-bold font-mono ${getTempColor(expandedStation.tmin_obs)}`}
-                  >
-                    {expandedStation.tmin_obs != null
-                      ? `${expandedStation.tmin_obs.toFixed(1)}°C`
-                      : "--"}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-[var(--canvas-strong)] p-3">
-                  <p className="text-xs uppercase tracking-widest text-ink/70 font-semibold mb-1.5">
-                    {labels.tmax_prev}
-                  </p>
-                  <p
-                    className={`text-lg font-bold font-mono ${getTempColor(expandedStation.tmax_prev)}`}
-                  >
-                    {expandedStation.tmax_prev != null
-                      ? `${expandedStation.tmax_prev.toFixed(1)}°C`
-                      : "--"}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-[var(--canvas-strong)] p-3">
-                  <p className="text-xs uppercase tracking-widest text-ink/70 font-semibold mb-1.5">
-                    {labels.tmin_prev}
-                  </p>
-                  <p
-                    className={`text-lg font-bold font-mono ${getTempColor(expandedStation.tmin_prev)}`}
-                  >
-                    {expandedStation.tmin_prev != null
-                      ? `${expandedStation.tmin_prev.toFixed(1)}°C`
-                      : "--"}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-[var(--canvas-strong)] p-3">
-                  <p className="text-xs uppercase tracking-widest text-ink/70 font-semibold mb-1.5">
-                    {labels.meteo}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`material-symbols-outlined text-lg ${wInfo.color}`}>
-                      {wInfo.icon}
-                    </span>
-                    <p className="text-sm font-semibold text-ink truncate">
-                      {expandedStation.weather_obs || expandedStation.weather_prev || "--"}
-                    </p>
-                  </div>
-                </div>
-                <div className="rounded-xl bg-[var(--canvas-strong)] p-3">
-                  <p className="text-xs uppercase tracking-widest text-ink/70 font-semibold mb-1.5">
-                    {labels.qualite}
-                  </p>
-                  <span
-                    className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${qBadge.classes}`}
-                  >
-                    {qBadge.label}
-                  </span>
-                </div>
-              </div>
-            );
-
-            const columns: {
+            const languages: {
               lang: string;
               flag: string;
               color: string;
@@ -651,29 +546,26 @@ export function DetailsStationsPage() {
                   </button>
                 </div>
 
-                {/* Three-column multilingual layout */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  {columns.map((col) => {
-                    const labels = LABELS[col.lang];
+                {/* Vertical multilingual layout - full width */}
+                <div className="flex flex-col gap-4">
+                  {languages.map((lang) => {
+                    const labels = LABELS[lang.lang];
                     return (
                       <div
-                        key={col.lang}
+                        key={lang.lang}
                         className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden"
                       >
-                        {/* Column header */}
+                        {/* Language header */}
                         <div
-                          className={`bg-gradient-to-r ${col.color} px-4 py-3 flex items-center gap-2`}
+                          className={`bg-gradient-to-r ${lang.color} px-4 py-2.5 flex items-center gap-2`}
                         >
                           <span className="material-symbols-outlined text-white text-lg">
-                            {col.flag}
+                            {lang.flag}
                           </span>
-                          <h3 className="text-sm font-bold text-white">{col.lang}</h3>
+                          <h3 className="text-sm font-bold text-white">{lang.lang}</h3>
                         </div>
 
-                        <div className="p-4 space-y-4">
-                          {/* Metrics grid */}
-                          <MetricGrid labels={labels} />
-
+                        <div className="p-4 space-y-3">
                           {/* Station-level interpretation */}
                           <div className="rounded-xl bg-gradient-to-r from-primary-900/5 to-secondary-900/5 dark:from-primary-400/5 dark:to-secondary-400/5 border border-primary-200/30 dark:border-primary-700/20 p-3">
                             <p className="text-xs uppercase tracking-widest text-ink/60 font-semibold mb-2 flex items-center gap-1">
@@ -681,7 +573,7 @@ export function DetailsStationsPage() {
                               {labels.interp_station}
                             </p>
                             <p className="text-sm text-ink leading-relaxed">
-                              {col.stationText || (
+                              {lang.stationText || (
                                 <span className="text-muted italic">{labels.no_interp}</span>
                               )}
                             </p>
@@ -694,7 +586,7 @@ export function DetailsStationsPage() {
                               {labels.interp_bulletin}
                             </p>
                             <p className="text-sm text-ink leading-relaxed">
-                              {col.bulletinText || (
+                              {lang.bulletinText || (
                                 <span className="text-muted italic">{labels.no_interp}</span>
                               )}
                             </p>
