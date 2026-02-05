@@ -22,10 +22,10 @@ export function Sidebar({
     <>
       <div className="flex items-center gap-3 p-6 border-b border-[var(--border)]">
         <div className="relative">
-          <div className="bg-gradient-to-br from-emerald-500 via-teal-500 to-blue-500 rounded-2xl size-12 flex items-center justify-center shadow-lg">
+          <div className="bg-gradient-to-br from-primary-500 to-secondary-600 rounded-2xl size-12 flex items-center justify-center shadow-lg">
             <span className="material-symbols-outlined text-white text-2xl">wb_sunny</span>
           </div>
-          <div className="absolute -top-1 -right-1 size-4 bg-amber-500 rounded-full border-2 border-white"></div>
+          <div className="absolute -top-1 -right-1 size-4 bg-accent-400 rounded-full border-2 border-[var(--surface)]"></div>
         </div>
         <div className="flex flex-col">
           <h1 className="text-ink text-lg font-semibold leading-tight font-display">ANAM Météo</h1>
@@ -43,7 +43,7 @@ export function Sidebar({
               className={({ isActive: isNavActive }) =>
                 `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
                   isNavActive || isActive
-                    ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md"
+                    ? "bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/25"
                     : "hover:bg-[var(--canvas-strong)] text-muted"
                 }`
               }
@@ -77,7 +77,7 @@ export function Sidebar({
           <h2 className="text-base font-semibold text-ink">Navigation</h2>
           <button
             type="button"
-            className="rounded-lg border border-[var(--border)] px-2 py-1 text-sm text-muted"
+            className="rounded-lg border border-[var(--border)] px-2 py-1 text-sm text-muted hover:bg-[var(--canvas-strong)] transition-colors"
             onClick={onDesktopToggle}
           >
             Réduire
@@ -101,7 +101,7 @@ export function Sidebar({
           <h2 className="text-base font-semibold text-ink">Navigation</h2>
           <button
             type="button"
-            className="rounded-lg border border-[var(--border)] px-2 py-1 text-sm text-muted"
+            className="rounded-lg border border-[var(--border)] px-2 py-1 text-sm text-muted hover:bg-[var(--canvas-strong)] transition-colors"
             onClick={onClose}
           >
             Fermer

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite build)",
+      "WebFetch(domain:www.meteoburkina.bf)",
+      "Bash(npx tsc:*)",
+      "WebSearch",
+      "WebFetch(domain:internews.org)",
+      "WebFetch(domain:dictionary.ankataa.com)",
+      "WebFetch(domain:www.webonary.org)",
+      "WebFetch(domain:www.braced.org)",
+      "WebFetch(domain:fr.glosbe.com)",
+      "Bash(where:*)",
+      "Bash(pdftotext:*)"
+    ]
+  }
+}

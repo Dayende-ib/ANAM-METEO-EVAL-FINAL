@@ -121,179 +121,191 @@ export function ValidationIssuesPage() {
  };
 
  return (
-  <Layout title="Problèmes de validation">
-   <div className="space-y-6">
-    {error && <ErrorPanel message={error} />}
-    <section className="surface-panel soft p-6">
-     <div className="grid gap-4 sm:grid-cols-3">
-      <div>
-       <label className="block text-xs font-semibold uppercase tracking-[0.3em] text-muted mb-2">
-        Date
-       </label>
-       <input
-        type="date"
-        value={date}
-        onChange={(event) => setDate(event.target.value)}
-        className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-       />
-      </div>
-      <div>
-       <label className="block text-xs font-semibold uppercase tracking-[0.3em] text-muted mb-2">
-        Station
-       </label>
-       <input
-        type="text"
-        value={station}
-        onChange={(event) => setStation(event.target.value)}
-        placeholder="Ouagadougou..."
-        className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-       />
-      </div>
-      <div>
-       <label className="block text-xs font-semibold uppercase tracking-[0.3em] text-muted mb-2">
-        Gravité
-       </label>
-       <select
-        value={severity}
-        onChange={(event) => setSeverity(event.target.value)}
-        className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-       >
-        {SEVERITY_OPTIONS.map((option) => (
-         <option key={option} value={option}>
-          {option === "all" ? "Tous" : option === "warning" ? "Avertissement" : option === "error" ? "Erreur" : "Info"}
-         </option>
-        ))}
-       </select>
-      </div>
-     </div>
-     <div className="mt-4 flex flex-wrap gap-3">
-      <button
-       type="button"
-       onClick={loadIssues}
-       className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors"
-      >
-       Actualiser
-      </button>
-      <button
-       type="button"
-       onClick={() => {
-        setDate("");
-        setStation("");
-        setSeverity("all");
-       }}
-       className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors"
-      >
-       Réinitialiser
-      </button>
-     </div>
-    </section>
+   <Layout title="Problèmes de validation">
+     <div className="space-y-6">
+       {error && <ErrorPanel message={error} />}
+       <section className="surface-panel soft p-6">
+         <div className="grid gap-4 sm:grid-cols-3">
+           <div>
+             <label className="block text-xs font-semibold uppercase tracking-[0.3em] text-muted mb-2">
+               Date
+             </label>
+             <input
+               type="date"
+               value={date}
+               onChange={(event) => setDate(event.target.value)}
+               className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+             />
+           </div>
+           <div>
+             <label className="block text-xs font-semibold uppercase tracking-[0.3em] text-muted mb-2">
+               Station
+             </label>
+             <input
+               type="text"
+               value={station}
+               onChange={(event) => setStation(event.target.value)}
+               placeholder="Ouagadougou..."
+               className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+             />
+           </div>
+           <div>
+             <label className="block text-xs font-semibold uppercase tracking-[0.3em] text-muted mb-2">
+               Gravité
+             </label>
+             <select
+               value={severity}
+               onChange={(event) => setSeverity(event.target.value)}
+               className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+             >
+               {SEVERITY_OPTIONS.map((option) => (
+                 <option key={option} value={option}>
+                   {option === "all"
+                     ? "Tous"
+                     : option === "warning"
+                       ? "Avertissement"
+                       : option === "error"
+                         ? "Erreur"
+                         : "Info"}
+                 </option>
+               ))}
+             </select>
+           </div>
+         </div>
+         <div className="mt-4 flex flex-wrap gap-3">
+           <button
+             type="button"
+             onClick={loadIssues}
+             className="rounded-full bg-gradient-to-br from-primary-500 to-secondary-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors"
+           >
+             Actualiser
+           </button>
+           <button
+             type="button"
+             onClick={() => {
+               setDate("");
+               setStation("");
+               setSeverity("all");
+             }}
+             className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors"
+           >
+             Réinitialiser
+           </button>
+         </div>
+       </section>
 
-    <section className="surface-panel overflow-hidden">
-     <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--canvas-strong)]">
-      <div>
-       <h3 className="text-lg font-semibold text-ink font-display">Problèmes</h3>
-       <p className="text-xs text-muted">{filteredIssues.length} problème(s)</p>
-      </div>
+       <section className="surface-panel overflow-hidden">
+         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--canvas-strong)]">
+           <div>
+             <h3 className="text-lg font-semibold text-ink font-display">Problèmes</h3>
+             <p className="text-xs text-muted">{filteredIssues.length} problème(s)</p>
+           </div>
+         </div>
+         {loading && (
+           <div className="p-6">
+             <LoadingPanel message="Chargement des problèmes de validation..." />
+           </div>
+         )}
+         {!loading && filteredIssues.length === 0 && (
+           <div className="p-6 text-sm text-muted">Aucun problème de validation trouvé.</div>
+         )}
+         {!loading && filteredIssues.length > 0 && (
+           <div className="overflow-x-auto">
+             <table className="w-full text-left text-sm">
+               <thead className="bg-[var(--surface)]/70 text-xs uppercase tracking-[0.2em] text-muted">
+                 <tr>
+                   <th className="px-6 py-3">Date</th>
+                   <th className="px-6 py-3">Station</th>
+                   <th className="px-6 py-3">Type</th>
+                   <th className="px-6 py-3">Code</th>
+                   <th className="px-6 py-3">Gravité</th>
+                   <th className="px-6 py-3">Statut</th>
+                   <th className="px-6 py-3">Message</th>
+                   <th className="px-6 py-3 text-right">Actions</th>
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-[var(--border)]">
+                 {filteredIssues.map((issue) => (
+                   <tr
+                     key={issue.id}
+                     className={`${getIssueRowClass(issue.status)} hover:bg-[var(--canvas-strong)]`}
+                   >
+                     <td className="px-6 py-4 font-mono">{issue.bulletin_date ?? "--"}</td>
+                     <td className="px-6 py-4">{issue.station_name ?? "--"}</td>
+                     <td className="px-6 py-4">
+                       {issue.map_type === "observation"
+                         ? "Observation"
+                         : issue.map_type === "forecast"
+                           ? "Prévision"
+                           : (issue.map_type ?? "--")}
+                     </td>
+                     <td className="px-6 py-4">{issue.code ?? "--"}</td>
+                     <td className="px-6 py-4">{issue.severity ?? "--"}</td>
+                     <td className="px-6 py-4">{issue.status ?? "open"}</td>
+                     <td className="px-6 py-4 text-xs text-muted">{issue.message ?? "--"}</td>
+                     <td className="px-6 py-4 text-right">
+                       <div className="flex flex-wrap justify-end gap-2">
+                         <button
+                           type="button"
+                           onClick={() => handleIgnore(issue)}
+                           className="rounded-full border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors"
+                           disabled={actionLoading === issue.id}
+                         >
+                           Ignorer
+                         </button>
+                         <button
+                           type="button"
+                           onClick={() => handleStartEdit(issue)}
+                           className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors"
+                           disabled={!canCorrect(issue) || actionLoading === issue.id}
+                         >
+                           Corriger
+                         </button>
+                       </div>
+                       {editingIssueId === issue.id && (
+                         <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                           <input
+                             type="number"
+                             placeholder="Tmin"
+                             value={editTmin}
+                             onChange={(event) => setEditTmin(event.target.value)}
+                             className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 px-3 py-1 text-xs"
+                           />
+                           <input
+                             type="number"
+                             placeholder="Tmax"
+                             value={editTmax}
+                             onChange={(event) => setEditTmax(event.target.value)}
+                             className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 px-3 py-1 text-xs"
+                           />
+                           <div className="flex gap-2">
+                             <button
+                               type="button"
+                               onClick={() => handleApplyCorrection(issue)}
+                               className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors"
+                               disabled={actionLoading === issue.id}
+                             >
+                               Enregistrer
+                             </button>
+                             <button
+                               type="button"
+                               onClick={() => setEditingIssueId(null)}
+                               className="rounded-full border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors"
+                             >
+                               Annuler
+                             </button>
+                           </div>
+                         </div>
+                       )}
+                     </td>
+                   </tr>
+                 ))}
+               </tbody>
+             </table>
+           </div>
+         )}
+       </section>
      </div>
-     {loading && (
-      <div className="p-6">
-       <LoadingPanel message="Chargement des problèmes de validation..." />
-      </div>
-     )}
-     {!loading && filteredIssues.length === 0 && (
-      <div className="p-6 text-sm text-muted">Aucun problème de validation trouvé.</div>
-     )}
-     {!loading && filteredIssues.length > 0 && (
-      <div className="overflow-x-auto">
-       <table className="w-full text-left text-sm">
-        <thead className="bg-[var(--surface)]/70 text-xs uppercase tracking-[0.2em] text-muted">
-         <tr>
-          <th className="px-6 py-3">Date</th>
-          <th className="px-6 py-3">Station</th>
-          <th className="px-6 py-3">Type</th>
-          <th className="px-6 py-3">Code</th>
-          <th className="px-6 py-3">Gravité</th>
-          <th className="px-6 py-3">Statut</th>
-          <th className="px-6 py-3">Message</th>
-          <th className="px-6 py-3 text-right">Actions</th>
-         </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--border)]">
-         {filteredIssues.map((issue) => (
-          <tr
-           key={issue.id}
-           className={`${getIssueRowClass(issue.status)} hover:bg-[var(--canvas-strong)]`}
-          >
-           <td className="px-6 py-4 font-mono">{issue.bulletin_date ?? "--"}</td>
-           <td className="px-6 py-4">{issue.station_name ?? "--"}</td>
-           <td className="px-6 py-4">{issue.map_type === "observation" ? "Observation" : issue.map_type === "forecast" ? "Prévision" : issue.map_type ?? "--"}</td>
-           <td className="px-6 py-4">{issue.code ?? "--"}</td>
-           <td className="px-6 py-4">{issue.severity ?? "--"}</td>
-           <td className="px-6 py-4">{issue.status ?? "open"}</td>
-           <td className="px-6 py-4 text-xs text-muted">{issue.message ?? "--"}</td>
-           <td className="px-6 py-4 text-right">
-            <div className="flex flex-wrap justify-end gap-2">
-             <button
-              type="button"
-              onClick={() => handleIgnore(issue)}
-              className="rounded-full border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors"
-              disabled={actionLoading === issue.id}
-             >
-              Ignorer
-             </button>
-             <button
-              type="button"
-              onClick={() => handleStartEdit(issue)}
-              className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors"
-              disabled={!canCorrect(issue) || actionLoading === issue.id}
-             >
-              Corriger
-             </button>
-            </div>
-            {editingIssueId === issue.id && (
-             <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              <input
-               type="number"
-               placeholder="Tmin"
-               value={editTmin}
-               onChange={(event) => setEditTmin(event.target.value)}
-               className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 px-3 py-1 text-xs"
-              />
-              <input
-               type="number"
-               placeholder="Tmax"
-               value={editTmax}
-               onChange={(event) => setEditTmax(event.target.value)}
-               className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 px-3 py-1 text-xs"
-              />
-              <div className="flex gap-2">
-               <button
-                type="button"
-                onClick={() => handleApplyCorrection(issue)}
-                className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors"
-                disabled={actionLoading === issue.id}
-               >
-                Enregistrer
-               </button>
-               <button
-                type="button"
-                onClick={() => setEditingIssueId(null)}
-                className="rounded-full border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors"
-               >
-                Annuler
-               </button>
-              </div>
-             </div>
-            )}
-           </td>
-          </tr>
-         ))}
-        </tbody>
-       </table>
-      </div>
-     )}
-    </section>
-   </div>
-  </Layout>
+   </Layout>
  );
 }

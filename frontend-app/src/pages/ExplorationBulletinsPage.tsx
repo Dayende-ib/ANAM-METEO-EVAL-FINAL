@@ -598,7 +598,7 @@ export function ExplorationBulletinsPage() {
                         onClick={() => setFilterType(option.key)}
                         className={`flex-1 rounded-full px-3 py-2 text-xs font-semibold transition-all ${
                           filterType === option.key
-                            ? "bg-emerald-600 text-white shadow"
+                            ? "bg-gradient-to-br from-primary-500 to-secondary-600 text-white shadow"
                             : "text-muted hover:text-ink"
                         }`}
                       >
@@ -656,13 +656,13 @@ export function ExplorationBulletinsPage() {
               <div className="group rounded-2xl border border-[var(--border)] bg-gradient-to-br from-emerald-50 to-white p-4 hover:shadow-lg transition-all duration-300 cursor-pointer">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs text-muted font-semibold uppercase tracking-wider">Bulletins</p>
-                  <span className="material-symbols-outlined text-emerald-600 group-hover:scale-110 transition-transform">description</span>
+                  <span className="material-symbols-outlined text-success group-hover:scale-110 transition-transform">description</span>
                 </div>
                 <p className="text-3xl font-bold font-mono text-ink mb-1">{stats.totalBulletins}</p>
                 <div className="flex items-center gap-2">
-                  <div className="h-1 flex-1 bg-emerald-100 rounded-full overflow-hidden">
+                  <div className="h-1 flex-1 bg-tertiary rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-emerald-500 rounded-full transition-all duration-1000"
+                      className="h-full bg-secondary rounded-full transition-all duration-1000"
                       style={{ width: `${(filteredBulletins.length / stats.totalBulletins) * 100}%` }}
                     ></div>
                   </div>
@@ -726,7 +726,7 @@ export function ExplorationBulletinsPage() {
                   onClick={() => toggleLanguage(option.key)}
                   className={buttonClasses}
                   aria-pressed={isSelected}
-                  aria-label={`${isSelected ? 'Masquer' : 'Afficher'} les bulletins en ${option.label}`}
+                  aria-label={`${isSelected ? "Masquer" : "Afficher"} les bulletins en ${option.label}`}
                 >
                   {option.label}
                 </button>
@@ -745,7 +745,7 @@ export function ExplorationBulletinsPage() {
             }}
             className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
               viewMode === "list"
-                ? "bg-emerald-600 text-white"
+                ? "bg-gradient-to-br from-primary-500 to-secondary-600 text-white"
                 : "border border-[var(--border)] text-ink hover:bg-[var(--canvas-strong)]"
             }`}
           >

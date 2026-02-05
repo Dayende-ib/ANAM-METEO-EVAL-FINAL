@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { StatCard, type StatCardProps } from "../components/StatCard";
 import { Layout } from "../components/Layout";
 import { ErrorPanel, LoadingPanel } from "../components/StatusPanel";
+import bgDashboard from "../assets/bg-dashboard3.png";
+
 import {
  fetchBulletins,
  fetchMetricsByDate,
@@ -107,6 +110,7 @@ const buildCalendar = (monthValue: string) => {
 };
 
 export function DashboardPage() {
+ const navigate = useNavigate();
  const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
  const [quality, setQuality] = useState<DataQualityResponse | null>(null);
  const [metricsHistory, setMetricsHistory] = useState<MetricsResponse[]>([]);
@@ -162,7 +166,7 @@ export function DashboardPage() {
    console.error("Échec du chargement des métriques:", err);
    setMetricsError("Échec du chargement des métriques du tableau de bord.");
   }
-  setMetrics((prev) => (prev ? null : prev)); // Force refresh if already null or reset
+  setMetrics((prev) => (prev ? null : prev));
   setMetrics(null);
   } finally {
   setLoading(false);
@@ -214,18 +218,15 @@ export function DashboardPage() {
  const calendarDays = useMemo(() => buildCalendar(selectedMonth), [selectedMonth]);
  const availableDaysForMonth = availableDaysByMonth[selectedMonth] || [];
 
- // Sélectionner automatiquement le dernier jour disponible quand on change de mois
  useEffect(() => {
   if (!selectedMonth || !availableDaysByMonth[selectedMonth]) return;
 
   const days = availableDaysByMonth[selectedMonth];
   if (days.length > 0) {
-   // Trier pour s'assurer d'avoir le dernier jour (le plus grand nombre)
    const sortedDays = [...days].sort((a, b) => b.localeCompare(a));
    const lastDay = sortedDays[0];
    const newDate = `${selectedMonth}-${lastDay}`;
 
-   // On ne met à jour que si la date est différente pour éviter les boucles
    if (selectedDate !== newDate) {
     setSelectedDate(newDate);
     setMetricsError(null);
@@ -233,7 +234,6 @@ export function DashboardPage() {
   }
  }, [selectedMonth, availableDaysByMonth, selectedDate]);
 
- // Calculer les statistiques dynamiquement à partir des données reçues
  const stats = useMemo(() => {
   if (!metrics && !quality) return initialStats;
   return buildStats(metrics, quality);
@@ -327,265 +327,311 @@ export function DashboardPage() {
  }
 
  return (
- <Layout title="Dashboard">
-  <div className="space-y-6">
-  {datesError && <ErrorPanel message={datesError} />}
-  {metricsError && <ErrorPanel message={metricsError} />}
-  <section className="grid gap-6 lg:grid-cols-[2.1fr,1fr]">
-  <div className="surface-panel soft relative overflow-hidden p-6">
-   <div className="absolute -top-24 right-0 h-48 w-48 rounded-full bg-emerald-200/40 blur-3xl" />
-   <div className="absolute -bottom-20 left-0 h-40 w-40 rounded-full bg-blue-200/40 blur-3xl" />
-   <div className="relative space-y-4">
-   <div className="flex items-center gap-3 text-xs uppercase tracking-[0.4em] text-muted">
-    <span className="inline-flex items-center gap-2 rounded-full bg-[var(--canvas-strong)] px-3 py-1">
-    <span className="h-2 w-2 rounded-full bg-emerald-500 pulse-soft" />
-    Temps réel
-    </span>
-    <span>Contrôle qualité</span>
-   </div>
-   <div>
-    <h1 className="text-3xl font-semibold text-ink font-display">Tableau de bord qualité prévision</h1>
-    <p className="text-sm text-muted">
-    Synthèse des performances météo pour la date {selectedDate || "--"}.
-    </p>
-   </div>
-   <div className="flex flex-wrap items-center gap-3">
-    <button className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-colors">
-    Exporter le résumé
-    </button>
-    <button className="rounded-full border border-[var(--border)] px-5 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors">
-    Voir tendances
-    </button>
-   </div>
-   <div className="grid gap-3 sm:grid-cols-4">
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-4">
-    <p className="text-xs text-muted">Bulletins</p>
-    <p className="text-lg font-semibold font-mono text-ink">{bulletinCount}</p>
-    <p className="text-xs text-muted">Obs {observationCount} / Prev {forecastCount}</p>
-    </div>
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-4">
-    <p className="text-xs text-muted">Pages traitées</p>
-    <p className="text-lg font-semibold font-mono text-ink">{pagesCount}</p>
-    <p className="text-xs text-muted">PDF découpés</p>
-    </div>
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-4">
-    <p className="text-xs text-muted">Dates chargées</p>
-    <p className="text-lg font-semibold font-mono text-ink">{availableDates.length}</p>
-    <p className="text-xs text-muted">Dernière: {availableDates[0] ?? "--"}</p>
-    </div>
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-4">
-    <p className="text-xs text-muted">Échantillon</p>
-    <p className="text-lg font-semibold font-mono text-ink">{metrics?.sample_size ?? "--"}</p>
-    <p className="text-xs text-muted">Stations évaluées</p>
-    </div>
-   </div>
-   </div>
-  </div>
+   <Layout title="Dashboard">
+     <div className="space-y-6">
+       {datesError && <ErrorPanel message={datesError} />}
+       {metricsError && <ErrorPanel message={metricsError} />}
+       <section className="grid gap-6 lg:grid-cols-[2.1fr,1fr]">
+         <div
+           className="relative overflow-hidden rounded-[1.25rem] p-6 bg-cover bg-center bg-no-repeat shadow-xl"
+           style={{
+             backgroundImage: `url(${bgDashboard})`,
+           }}
+         >
+           {/* Dark overlay for text readability */}
+           <div className="absolute inset-0 bg-gradient-to-br from-primary-900/85 via-primary-900/75 to-primary-800/80" />
+           <div className="absolute inset-0 bg-secondary/30" />
+           <div className="absolute -top-24 right-0 h-48 w-48 rounded-full bg-primary-400/20 blur-3xl" />
+           <div className="absolute -bottom-20 left-0 h-40 w-40 rounded-full bg-sky-400/15 blur-3xl" />
+           <div className="relative z-10 space-y-4">
+             <div className="flex items-center gap-3 text-xs uppercase tracking-[0.4em] text-blue-200/70">
+               <span className="inline-flex items-center gap-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 px-3 py-1">
+                 <span className="h-2 w-2 rounded-full bg-sky-400 pulse-soft" />
+                 <span className="text-white/90">Temps réel</span>
+               </span>
+               <span className="text-blue-200/70">Contrôle qualité</span>
+             </div>
+             <div>
+               <h1 className="text-3xl font-semibold text-white font-display drop-shadow-md">
+                 Tableau de bord qualité prévision
+               </h1>
+               <p className="text-sm text-blue-100/80">
+                 Synthèse des performances météo pour la date {selectedDate || "--"}.
+               </p>
+             </div>
+             <div className="flex flex-wrap items-center gap-3">
+               <button
+                 onClick={() => navigate("/")}
+                 className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-primary-900 shadow-lg hover:bg-blue-50 transition-colors"
+               >
+                 <span className="material-symbols-outlined text-base">home</span>
+                 Accueil
+               </button>
+               <button className="rounded-full border border-white/25 bg-white/10 backdrop-blur-sm px-5 py-2 text-sm font-semibold text-white hover:bg-white/20 transition-colors">
+                 Exporter le résumé
+               </button>
+               <button className="rounded-full border border-white/25 bg-white/10 backdrop-blur-sm px-5 py-2 text-sm font-semibold text-white hover:bg-white/20 transition-colors">
+                 Voir tendances
+               </button>
+             </div>
+             <div className="grid gap-3 sm:grid-cols-4">
+               <div className="rounded-2xl border border-white/15 bg-white/10 backdrop-blur-sm p-4">
+                 <p className="text-sm text-blue-100/80 font-medium">Bulletins</p>
+                 <p className="text-lg font-semibold font-mono text-white">{bulletinCount}</p>
+                 <p className="text-sm text-sky-300">
+                   Obs {observationCount} / Prev {forecastCount}
+                 </p>
+               </div>
+               <div className="rounded-2xl border border-white/15 bg-white/10 backdrop-blur-sm p-4">
+                 <p className="text-sm text-blue-100/80 font-medium">Pages traitées</p>
+                 <p className="text-lg font-semibold font-mono text-white">{pagesCount}</p>
+                 <p className="text-sm text-sky-300">PDF découpés</p>
+               </div>
+               <div className="rounded-2xl border border-white/15 bg-white/10 backdrop-blur-sm p-4">
+                 <p className="text-sm text-blue-100/80 font-medium">Dates chargées</p>
+                 <p className="text-lg font-semibold font-mono text-white">{availableDates.length}</p>
+                 <p className="text-sm text-sky-300">Dernière: {availableDates[0] ?? "--"}</p>
+               </div>
+               <div className="rounded-2xl border border-white/15 bg-white/10 backdrop-blur-sm p-4">
+                 <p className="text-sm text-blue-100/80 font-medium">Échantillon</p>
+                 <p className="text-lg font-semibold font-mono text-white">
+                   {metrics?.sample_size ?? "--"}
+                 </p>
+                 <p className="text-sm text-sky-300">Stations évaluées</p>
+               </div>
+             </div>
+           </div>
+         </div>
 
-  <div className="surface-panel p-6">
-   <div className="flex items-center justify-between mb-4">
-   <h3 className="text-sm uppercase tracking-[0.3em] text-muted">Sélection</h3>
-   <span className="text-xs text-muted">{selectedDate || "--"}</span>
-   </div>
-   <div className="space-y-4">
-   <select
-    className="w-full rounded-2xl border border-[var(--border)] bg-[var(--canvas-strong)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-    value={selectedMonth}
-    onChange={(e) => setSelectedMonth(e.target.value)}
-    disabled={Object.keys(availableDaysByMonth).length === 0}
-   >
-    {Object.keys(availableDaysByMonth).length === 0 && <option value="">Aucune donnée</option>}
-    {Object.keys(availableDaysByMonth).map((month) => (
-    <option key={month} value={month}>
-     {month}
-    </option>
-    ))}
-   </select>
-   <div className="grid grid-cols-7 gap-1">
-    {["D", "L", "M", "M", "J", "V", "S"].map((d, idx) => (
-    <div key={`${d}-${idx}`} className="text-center text-[11px] font-semibold text-muted py-1">
-     {d}
-    </div>
-    ))}
-   </div>
-   <div className="grid grid-cols-7 gap-1">
-    {calendarDays.flat().map((day, idx) =>
-    day ? (
-     <button
-     key={`${day}-${idx}`}
-     className={`h-9 rounded-xl text-sm font-semibold transition-all ${
-      selectedDate.endsWith(day.padStart(2, "0"))
-      ? "bg-emerald-600 text-white shadow-md"
-      : availableDaysForMonth.includes(day.padStart(2, "0"))
-      ? "text-ink hover:bg-[var(--canvas-strong)]"
-      : "text-muted cursor-not-allowed border border-[var(--border)] bg-[var(--canvas-strong)]"
-     }`}
-     onClick={() => handleDayClick(day)}
-     disabled={!availableDaysForMonth.includes(day.padStart(2, "0"))}
-     >
-     {day}
-     </button>
-    ) : (
-     <div key={`empty-${idx}`} />
-    ),
-    )}
-   </div>
-   </div>
-  </div>
-  </section>
+         <div className="surface-panel p-6">
+           <div className="flex items-center justify-between mb-4">
+             <h3 className="text-sm uppercase tracking-[0.3em] text-ink font-semibold">Sélection</h3>
+             <span className="text-xs font-mono text-primary-500">{selectedDate || "--"}</span>
+           </div>
+           <div className="space-y-4">
+             <select
+               className="w-full rounded-xl border border-[var(--border)] bg-[var(--canvas-strong)] px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+               value={selectedMonth}
+               onChange={(e) => setSelectedMonth(e.target.value)}
+               disabled={Object.keys(availableDaysByMonth).length === 0}
+             >
+               {Object.keys(availableDaysByMonth).length === 0 && (
+                 <option value="">Aucune donnée</option>
+               )}
+               {Object.keys(availableDaysByMonth).map((month) => (
+                 <option key={month} value={month}>
+                   {month}
+                 </option>
+               ))}
+             </select>
+             <div className="grid grid-cols-7 gap-1">
+               {["D", "L", "M", "M", "J", "V", "S"].map((d, idx) => (
+                 <div
+                   key={`${d}-${idx}`}
+                   className="text-center text-[11px] font-semibold text-muted py-1"
+                 >
+                   {d}
+                 </div>
+               ))}
+             </div>
+             <div className="grid grid-cols-7 gap-1">
+               {calendarDays.flat().map((day, idx) =>
+                 day ? (
+                   <button
+                     key={`${day}-${idx}`}
+                     className={`h-9 rounded-lg text-sm font-medium transition-all ${
+                       selectedDate.endsWith(day.padStart(2, "0"))
+                         ? "bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/25"
+                         : availableDaysForMonth.includes(day.padStart(2, "0"))
+                           ? "text-ink hover:bg-primary-50 dark:hover:bg-primary-900/20"
+                           : "text-muted/40 cursor-not-allowed"
+                     }`}
+                     onClick={() => handleDayClick(day)}
+                     disabled={!availableDaysForMonth.includes(day.padStart(2, "0"))}
+                   >
+                     {day}
+                   </button>
+                 ) : (
+                   <div key={`empty-${idx}`} />
+                 ),
+               )}
+             </div>
+           </div>
+         </div>
+       </section>
 
-  <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-  {stats.map((stat, index) => (
-   <div key={stat.label} className="animate-rise" style={{ animationDelay: `${index * 80}ms` }}>
-   <StatCard {...stat} />
-   </div>
-  ))}
-  </section>
+       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+         {stats.map((stat, index) => (
+           <div
+             key={stat.label}
+             className="animate-rise"
+             style={{ animationDelay: `${index * 80}ms` }}
+           >
+             <StatCard {...stat} />
+           </div>
+         ))}
+       </section>
 
-  <section className="grid gap-6 lg:grid-cols-[1.3fr,1fr]">
-  <div className="surface-panel p-6">
-   <div className="flex items-center justify-between">
-   <h3 className="text-lg font-semibold text-ink font-display">Tendances température</h3>
-   <span className="text-xs text-muted">Aperçu</span>
-   </div>
-   <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--canvas-strong)] p-4">
-   {trendError ? (
-    <p className="text-sm text-muted">{trendError}</p>
-   ) : trendData.length < 2 ? (
-    <div className="flex items-center justify-center py-10 text-center text-muted">
-    <div>
-     <span className="material-symbols-outlined text-4xl mb-2">show_chart</span>
-     <p className="text-sm">Pas assez de points pour tracer la tendance.</p>
-    </div>
-    </div>
-   ) : (
-    <div>
-    <div className="flex flex-wrap items-center gap-4 text-xs text-muted">
-     <span className="inline-flex items-center gap-2">
-     <span className="h-2 w-2 rounded-full bg-emerald-500" />
-     Écart moyen Tmin
-     </span>
-     <span className="inline-flex items-center gap-2">
-     <span className="h-2 w-2 rounded-full bg-sky-500" />
-     Écart moyen Tmax
-     </span>
-     <span className="ml-auto font-mono">
-     {trendMin.toFixed(2)}C - {trendMax.toFixed(2)}C
-     </span>
-    </div>
-    <svg
-     className="mt-4 h-56 w-full"
-     viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-     role="img"
-     aria-label="Tendances Écart moyen Tmin et Tmax"
-    >
-     <rect
-     x={chartPadding}
-     y={chartPadding}
-     width={chartInnerWidth}
-     height={chartInnerHeight}
-     rx={18}
-     fill="white"
-     opacity="0.6"
-     />
-     <path
-     d={tminPath}
-     fill="none"
-     stroke="#10b981"
-     strokeWidth={2.5}
-     strokeLinecap="round"
-     />
-     <path
-     d={tmaxPath}
-     fill="none"
-     stroke="#0ea5e9"
-     strokeWidth={2.5}
-     strokeLinecap="round"
-     />
-     {trendData.map((item, index) => {
-     const x =
-      chartPadding + (index / (trendData.length - 1)) * chartInnerWidth;
-     const yMin =
-      item.maeTmin === null
-      ? null
-      : chartPadding + (1 - (item.maeTmin - trendMin) / trendRange) * chartInnerHeight;
-     const yMax =
-      item.maeTmax === null
-      ? null
-      : chartPadding + (1 - (item.maeTmax - trendMin) / trendRange) * chartInnerHeight;
-     return (
-      <g key={`point-${item.date}-${index}`}>
-      {yMin !== null && (
-       <circle cx={x} cy={yMin} r={4} fill="#10b981" />
-      )}
-      {yMax !== null && (
-       <circle cx={x} cy={yMax} r={4} fill="#0ea5e9" />
-      )}
-      </g>
-     );
-     })}
-    </svg>
-    <div className="mt-2 flex justify-between text-[11px] text-muted">
-     <span>{trendData[0]?.date ?? ""}</span>
-     <span>{trendData[trendData.length - 1]?.date ?? ""}</span>
-    </div>
-    </div>
-   )}
-   </div>
-  </div>
+       <section className="grid gap-6 lg:grid-cols-[1.3fr,1fr]">
+         <div className="surface-panel p-6">
+           <div className="flex items-center justify-between">
+             <h3 className="text-lg font-semibold text-ink font-display">Tendances température</h3>
+             <span className="rounded-full bg-primary-50 dark:bg-primary-900/20 px-3 py-1 text-xs font-medium text-primary-600 dark:text-primary-400">
+               {trendData.length} pts
+             </span>
+           </div>
+           <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--canvas-strong)] p-4">
+             {trendError ? (
+               <p className="text-sm text-muted">{trendError}</p>
+             ) : trendData.length < 2 ? (
+               <div className="flex items-center justify-center py-10 text-center text-muted">
+                 <div>
+                   <span className="material-symbols-outlined text-4xl mb-2 text-primary-300">show_chart</span>
+                   <p className="text-sm">Pas assez de points pour tracer la tendance.</p>
+                 </div>
+               </div>
+             ) : (
+               <div>
+                 <div className="flex flex-wrap items-center gap-4 text-xs text-muted">
+                   <span className="inline-flex items-center gap-2">
+                     <span className="h-2.5 w-2.5 rounded-full bg-primary-500" />
+                     Écart moyen Tmin
+                   </span>
+                   <span className="inline-flex items-center gap-2">
+                     <span className="h-2.5 w-2.5 rounded-full bg-sky-400" />
+                     Écart moyen Tmax
+                   </span>
+                   <span className="ml-auto font-mono text-[11px]">
+                     {trendMin.toFixed(2)}C - {trendMax.toFixed(2)}C
+                   </span>
+                 </div>
+                 <svg
+                   className="mt-4 h-56 w-full"
+                   viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                   role="img"
+                   aria-label="Tendances Écart moyen Tmin et Tmax"
+                 >
+                   <defs>
+                     <linearGradient id="tminGrad" x1="0" y1="0" x2="1" y2="0">
+                       <stop offset="0%" stopColor="#0A9AFF" />
+                       <stop offset="100%" stopColor="#3B82F6" />
+                     </linearGradient>
+                     <linearGradient id="tmaxGrad" x1="0" y1="0" x2="1" y2="0">
+                       <stop offset="0%" stopColor="#38BDF8" />
+                       <stop offset="100%" stopColor="#60A5FA" />
+                     </linearGradient>
+                   </defs>
+                   <rect
+                     x={chartPadding}
+                     y={chartPadding}
+                     width={chartInnerWidth}
+                     height={chartInnerHeight}
+                     rx={18}
+                     fill="var(--surface)"
+                     opacity="0.7"
+                   />
+                   <path
+                     d={tminPath}
+                     fill="none"
+                     stroke="url(#tminGrad)"
+                     strokeWidth={2.5}
+                     strokeLinecap="round"
+                   />
+                   <path
+                     d={tmaxPath}
+                     fill="none"
+                     stroke="url(#tmaxGrad)"
+                     strokeWidth={2.5}
+                     strokeLinecap="round"
+                   />
+                   {trendData.map((item, index) => {
+                     const x = chartPadding + (index / (trendData.length - 1)) * chartInnerWidth;
+                     const yMin =
+                       item.maeTmin === null
+                         ? null
+                         : chartPadding +
+                           (1 - (item.maeTmin - trendMin) / trendRange) * chartInnerHeight;
+                     const yMax =
+                       item.maeTmax === null
+                         ? null
+                         : chartPadding +
+                           (1 - (item.maeTmax - trendMin) / trendRange) * chartInnerHeight;
+                     return (
+                       <g key={`point-${item.date}-${index}`}>
+                         {yMin !== null && <circle cx={x} cy={yMin} r={3.5} fill="#0A9AFF" />}
+                         {yMax !== null && <circle cx={x} cy={yMax} r={3.5} fill="#38BDF8" />}
+                       </g>
+                     );
+                   })}
+                 </svg>
+                 <div className="mt-2 flex justify-between text-[11px] text-muted font-mono">
+                   <span>{trendData[0]?.date ?? ""}</span>
+                   <span>{trendData[trendData.length - 1]?.date ?? ""}</span>
+                 </div>
+               </div>
+             )}
+           </div>
+         </div>
 
-  <div className="surface-panel p-6">
-   <div className="flex items-center justify-between">
-   <h3 className="text-lg font-semibold text-ink font-display">Matrice de classification</h3>
-   <span className="text-xs text-muted">Étiquettes météo</span>
-   </div>
-   <div className="mt-4 overflow-x-auto">
-   {confusion?.labels && confusion.matrix ? (
-    <table className="min-w-full text-xs">
-    <thead>
-     <tr className="text-left text-muted">
-     <th className="py-2 pr-2"></th>
-     {confusion.labels.map((label) => (
-      <th key={label} className="py-2 px-2 text-center font-semibold">
-      Pred: {label}
-      </th>
-     ))}
-     </tr>
-    </thead>
-    <tbody>
-     {confusion.matrix.map((row, rowIndex) => (
-     <tr key={`row-${rowIndex}`} className="border-t border-[var(--border)]">
-      <td className="py-2 pr-2 font-semibold text-ink whitespace-nowrap">
-      Reel: {confusion.labels?.[rowIndex] ?? `L${rowIndex + 1}`}
-      </td>
-      {row.map((value, colIndex) => {
-      const intensity = maxConfusionValue ? value / maxConfusionValue : 0;
-      return (
-       <td
-       key={`cell-${rowIndex}-${colIndex}`}
-       className="py-2 px-2 text-center font-mono"
-       style={{
-        backgroundColor: `rgba(16, 185, 129, ${intensity * 0.35})`,
-        color: intensity > 0.55 ? "white" : "inherit",
-       }}
-       >
-       {value}
-       </td>
-      );
-      })}
-     </tr>
-     ))}
-    </tbody>
-    </table>
-   ) : (
-    <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--canvas-strong)] p-6 text-sm text-muted">
-    Aucune matrice de confusion disponible pour cette date.
-    </div>
-   )}
-   </div>
-  </div>
-  </section>
-  </div>
- </Layout>
+         <div className="surface-panel p-6">
+           <div className="flex items-center justify-between">
+             <h3 className="text-lg font-semibold text-ink font-display">
+               Matrice de classification
+             </h3>
+             <span className="rounded-full bg-secondary-50 dark:bg-secondary-700/15 px-3 py-1 text-xs font-medium text-secondary-600 dark:text-secondary-400">
+               Étiquettes
+             </span>
+           </div>
+           <div className="mt-4 overflow-x-auto">
+             {confusion?.labels && confusion.matrix ? (
+               <table className="min-w-full text-xs">
+                 <thead>
+                   <tr className="text-left text-muted">
+                     <th className="py-2 pr-2"></th>
+                     {confusion.labels.map((label) => (
+                       <th key={label} className="py-2 px-2 text-center font-semibold">
+                         Pred: {label}
+                       </th>
+                     ))}
+                   </tr>
+                 </thead>
+                 <tbody>
+                   {confusion.matrix.map((row, rowIndex) => (
+                     <tr key={`row-${rowIndex}`} className="border-t border-[var(--border)]">
+                       <td className="py-2 pr-2 font-semibold text-ink whitespace-nowrap">
+                         Reel: {confusion.labels?.[rowIndex] ?? `L${rowIndex + 1}`}
+                       </td>
+                       {row.map((value, colIndex) => {
+                         const intensity = maxConfusionValue ? value / maxConfusionValue : 0;
+                         return (
+                           <td
+                             key={`cell-${rowIndex}-${colIndex}`}
+                             className="py-2 px-2 text-center font-mono"
+                             style={{
+                               backgroundColor: `rgba(10, 154, 255, ${intensity * 0.3})`,
+                               color: intensity > 0.55 ? "white" : "inherit",
+                             }}
+                           >
+                             {value}
+                           </td>
+                         );
+                       })}
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+             ) : (
+               <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--canvas-strong)] p-6 text-center">
+                 <span className="material-symbols-outlined text-3xl text-primary-300 mb-2">grid_view</span>
+                 <p className="text-sm text-muted">
+                   Aucune matrice de confusion disponible pour cette date.
+                 </p>
+               </div>
+             )}
+           </div>
+         </div>
+       </section>
+     </div>
+   </Layout>
  );
 }
