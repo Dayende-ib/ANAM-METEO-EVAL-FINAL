@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover - handled gracefully at runtime
     InferenceHTTPClient = None
 
 from backend.modules.workflow_utils import extract_predictions, normalize_workflow_response, prediction_to_bbox
+from backend.modules.roi_utils import get_scale_factors, iter_station_rois, scale_roi
 
 class IconClassifier:
     """Utilise Roboflow (ou un fallback local) pour classifier les icônes station par station."""
@@ -487,8 +488,13 @@ class IconClassifier:
             return []
 
         icons = []
-        for station, rois in self.roi_config.items():
+        scale_x, scale_y = get_scale_factors(self.roi_config, image.shape)
+        for station, rois in iter_station_rois(self.roi_config):
             icon_roi = rois.get("icon_roi")
+            if not icon_roi:
+                continue
+            if scale_x != 1.0 or scale_y != 1.0:
+                icon_roi = scale_roi(icon_roi, scale_x, scale_y, pad=5, image_shape=image.shape)
             if not icon_roi:
                 continue
             x1, y1, x2, y2 = [int(v) for v in icon_roi]
@@ -538,7 +544,7 @@ class IconClassifier:
             confidence = round(min(1.0, (score + detection_conf) / 2.0), 3)
             name = self._match_nearest_city(bbox, city_candidates)
             if not name and self.roi_config:
-                name = self._match_station_by_icon_roi(bbox)
+                name = self._match_station_by_icon_roi(bbox, image.shape)
             icons.append(
                 {
                     "name": name,
@@ -602,12 +608,17 @@ class IconClassifier:
             return None
         return best["name"]
 
-    def _match_station_by_icon_roi(self, bbox):
+    def _match_station_by_icon_roi(self, bbox, image_shape=None):
         if not self.roi_config:
             return None
+        scale_x, scale_y = get_scale_factors(self.roi_config, image_shape)
         cx, cy = self._bbox_center(bbox)
-        for station, rois in self.roi_config.items():
+        for station, rois in iter_station_rois(self.roi_config):
             icon_roi = rois.get("icon_roi")
+            if not icon_roi:
+                continue
+            if scale_x != 1.0 or scale_y != 1.0:
+                icon_roi = scale_roi(icon_roi, scale_x, scale_y, pad=5, image_shape=image_shape)
             if not icon_roi:
                 continue
             x1, y1, x2, y2 = [int(v) for v in icon_roi]

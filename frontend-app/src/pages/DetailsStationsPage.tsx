@@ -187,14 +187,14 @@ export function DetailsStationsPage() {
       try {
         const data = await fetchBulletinByDate(selectedDate);
         if (!active) return;
-        const byName = new Map<string, Station>();
-        BASE_STATIONS.forEach((s) => byName.set(normalizeName(s.name), { ...s }));
-        data.stations.forEach((s) => {
+        const baseByName = new Map<string, Station>();
+        BASE_STATIONS.forEach((s) => baseByName.set(normalizeName(s.name), { ...s }));
+        const mergedStations = data.stations.map((s, index) => {
           const name = s.name ?? "";
           const key = normalizeName(name);
-          const base = byName.get(key);
-          byName.set(key, {
-            id: base?.id ?? byName.size + 1,
+          const base = baseByName.get(key);
+          return {
+            id: base?.id ?? index + 1,
             name: name || base?.name || "Station",
             lat: base?.lat ?? s.latitude ?? MAP_CENTER.lat,
             lng: base?.lng ?? s.longitude ?? MAP_CENTER.lng,
@@ -208,7 +208,7 @@ export function DetailsStationsPage() {
             interpretation_francais: s.interpretation_francais ?? null,
             interpretation_moore: s.interpretation_moore ?? null,
             interpretation_dioula: s.interpretation_dioula ?? null,
-          });
+          };
         });
         setBulletinInterpretations({
           francais: data.interpretation_francais ?? null,
@@ -216,9 +216,7 @@ export function DetailsStationsPage() {
           dioula: data.interpretation_dioula ?? null,
         });
         setStations(
-          Array.from(byName.values()).filter(
-            (s) => Number.isFinite(s.lat) && Number.isFinite(s.lng),
-          ),
+          mergedStations.filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng)),
         );
       } catch {
         if (active) setError("Impossible de charger les stations.");
