@@ -15,6 +15,8 @@ import numpy as np
 import pytesseract
 from pytesseract import Output
 
+from backend.modules.roi_utils import extract_base_dimensions, get_scale_factors, iter_station_rois, scale_roi
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,11 +35,16 @@ class TemperatureExtractor:
         self.ocr_upscale = float(os.getenv("TEMPERATURE_OCR_UPSCALE", "2.0"))
         self.roi_base_width = int(os.getenv("ROI_BASE_WIDTH", "0"))
         self.roi_base_height = int(os.getenv("ROI_BASE_HEIGHT", "0"))
+        self.color_mask_upscale = float(os.getenv("TEMPERATURE_COLOR_MASK_UPSCALE", "3.0"))
         self._roi_lookup = self._build_roi_lookup()
         timeout_value = float(os.getenv("TEMPERATURE_OCR_TIMEOUT_SECONDS", "0"))
         self.ocr_timeout = timeout_value if timeout_value > 0 else None
         self.ocr_workers = max(1, int(os.getenv("TEMPERATURE_OCR_WORKERS", "1")))
-        
+
+        config_base = extract_base_dimensions(self.roi_config)
+        if config_base[0] and config_base[1]:
+            self.roi_base_width, self.roi_base_height = config_base
+
         # Auto-détection de la résolution de base si non fournie
         if self.roi_base_width == 0 or self.roi_base_height == 0:
             self._auto_detect_base_resolution()
@@ -49,7 +56,7 @@ class TemperatureExtractor:
         if not self.roi_config:
             return
             
-        for station, rois in self.roi_config.items():
+        for station, rois in iter_station_rois(self.roi_config):
             for key in ("tmin_roi", "tmax_roi", "icon_roi"):
                 roi = rois.get(key)
                 if roi and len(roi) >= 4:
@@ -69,7 +76,7 @@ class TemperatureExtractor:
         if not self.roi_config:
             return []
         entries = []
-        for station, rois in self.roi_config.items():
+        for station, rois in iter_station_rois(self.roi_config):
             for key in ("tmin_roi", "tmax_roi"):
                 roi = rois.get(key)
                 if not roi:
@@ -196,9 +203,9 @@ class TemperatureExtractor:
         enhanced = cv2.resize(
             enhanced,
             None,
-            fx=3.0,
-            fy=3.0,
-            interpolation=cv2.INTER_CUBIC
+            fx=self.color_mask_upscale,
+            fy=self.color_mask_upscale,
+            interpolation=cv2.INTER_CUBIC,
         )
         
         return enhanced
@@ -225,15 +232,27 @@ class TemperatureExtractor:
                 roi_lookup = self._get_scaled_roi_lookup(image.shape)
 
         processed_variants = [
-            ("standard", self._preprocess_standard(image_path, map_bbox)),
-            ("sharp_contrast", self._preprocess_sharp_contrast(image_path, map_bbox)),
-            ("color_mask", self._preprocess_color_mask(image_path, map_bbox)),
+            (
+                "standard",
+                self._preprocess_standard(image_path, map_bbox),
+                self.ocr_upscale if self.ocr_upscale else 1.0,
+            ),
+            (
+                "sharp_contrast",
+                self._preprocess_sharp_contrast(image_path, map_bbox),
+                self.ocr_upscale if self.ocr_upscale else 1.0,
+            ),
+            (
+                "color_mask",
+                self._preprocess_color_mask(image_path, map_bbox),
+                self.color_mask_upscale if self.color_mask_upscale else 1.0,
+            ),
         ]
 
         ocr_config = "--psm 6 -c tessedit_char_whitelist=0123456789/NPnp "
         best_variant = None
         best_score = (-1, -1.0)
-        for name, processed_image in processed_variants:
+        for name, processed_image, scale_override in processed_variants:
             try:
                 ocr_data = pytesseract.image_to_data(
                     processed_image,
@@ -244,7 +263,12 @@ class TemperatureExtractor:
             except RuntimeError as exc:
                 logger.warning("OCR image_to_data timeout pour %s: %s", image_path, exc)
                 continue
-            detections = self.parse_temperature_data(ocr_data, map_bbox, image_shape=processed_image.shape)
+            detections = self.parse_temperature_data(
+                ocr_data,
+                map_bbox,
+                image_shape=processed_image.shape,
+                scale_override=scale_override,
+            )
             if self.roi_config:
                 detections = self._assign_station_names(detections, roi_lookup=roi_lookup)
             score = self._score_detections(detections)
@@ -309,7 +333,7 @@ class TemperatureExtractor:
                 return entry["station"]
         return None
 
-    def parse_temperature_data(self, ocr_data, bbox, image_shape=None):
+    def parse_temperature_data(self, ocr_data, bbox, image_shape=None, scale_override=None):
         """Convertit la sortie brute de Tesseract en couples Tmin/Tmax."""
         h_img, w_img = image_shape[:2] if image_shape else (None, None)
         pattern = re.compile(r"^(\d{1,2}|np)\s*/\s*(\d{1,2}|np)$", re.IGNORECASE)
@@ -358,7 +382,7 @@ class TemperatureExtractor:
             top = int(ocr_data["top"][i])
             width = int(ocr_data["width"][i])
             height = int(ocr_data["height"][i])
-            scale = self.ocr_upscale if self.ocr_upscale else 1.0
+            scale = scale_override if scale_override else (self.ocr_upscale if self.ocr_upscale else 1.0)
             if scale and scale != 1.0:
                 left = int(left / scale)
                 top = int(top / scale)
@@ -456,24 +480,30 @@ class TemperatureExtractor:
             logger.warning(message)
 
     def _get_scaled_roi_lookup(self, image_shape):
-        height, width = image_shape[:2]
-        if not (self.roi_base_width > 0 and self.roi_base_height > 0):
-            return self._roi_lookup
-        scale_x = width / float(self.roi_base_width)
-        scale_y = height / float(self.roi_base_height)
+        scale_x, scale_y = get_scale_factors(self.roi_config, image_shape)
         if abs(scale_x - 1.0) < 1e-3 and abs(scale_y - 1.0) < 1e-3:
             return self._roi_lookup
         scaled = []
         for entry in self._roi_lookup:
             x1, y1, x2, y2 = entry["bbox"]
+            scaled_bbox = scale_roi(
+                [x1, y1, x2, y2],
+                scale_x,
+                scale_y,
+                pad=0,
+                image_shape=image_shape,
+            )
+            if not scaled_bbox:
+                continue
+            x1, y1, x2, y2 = scaled_bbox
             scaled.append(
                 {
                     "station": entry["station"],
                     "bbox": (
-                        int(round(x1 * scale_x)),
-                        int(round(y1 * scale_y)),
-                        int(round(x2 * scale_x)),
-                        int(round(y2 * scale_y)),
+                        int(x1),
+                        int(y1),
+                        int(x2),
+                        int(y2),
                     ),
                 }
             )
@@ -501,20 +531,15 @@ class TemperatureExtractor:
             return []
         
         height, width = image.shape[:2]
-
-        scale_x = 1.0
-        scale_y = 1.0
-        if self.roi_base_width > 0 and self.roi_base_height > 0:
-            scale_x = width / float(self.roi_base_width)
-            scale_y = height / float(self.roi_base_height)
+        scale_x, scale_y = get_scale_factors(self.roi_config, image.shape)
 
         results = []
-        for station, rois in self.roi_config.items():
+        for station, rois in iter_station_rois(self.roi_config):
             tmin_roi = rois.get("tmin_roi")
             tmax_roi = rois.get("tmax_roi")
             if scale_x != 1.0 or scale_y != 1.0:
-                tmin_roi = self._scale_roi(tmin_roi, scale_x, scale_y)
-                tmax_roi = self._scale_roi(tmax_roi, scale_x, scale_y)
+                tmin_roi = scale_roi(tmin_roi, scale_x, scale_y, pad=5, image_shape=image.shape)
+                tmax_roi = scale_roi(tmax_roi, scale_x, scale_y, pad=5, image_shape=image.shape)
             if not tmin_roi and not tmax_roi:
                 continue
 

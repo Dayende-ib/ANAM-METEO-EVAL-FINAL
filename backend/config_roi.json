@@ -1,4 +1,6 @@
 {
+    "roi_base_width": 457,
+    "roi_base_height": 384,
     "Ouagadougou": {
         "tmin_roi": [
             253,

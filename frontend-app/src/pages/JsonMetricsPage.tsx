@@ -721,8 +721,7 @@ export function JsonMetricsPage() {
     }
   };
 
-  const handleLocalUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const filesList = event.target.files;
+  const processJsonFiles = async (filesList: FileList | File[]) => {
     if (!filesList || filesList.length === 0) return;
     const readers = Array.from(filesList).map(
       (file) =>
@@ -763,12 +762,15 @@ export function JsonMetricsPage() {
       setError("Impossible de lire certains fichiers JSON locaux.");
     } finally {
       setLoadingData(false);
-      event.target.value = "";
     }
   };
 
-  const handleCsvUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const filesList = event.target.files;
+  const handleLocalUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    await processJsonFiles(event.target.files ?? []);
+    event.target.value = "";
+  };
+
+  const processCsvFiles = async (filesList: FileList | File[]) => {
     if (!filesList || filesList.length === 0) return;
     try {
       setLoadingData(true);
@@ -793,8 +795,12 @@ export function JsonMetricsPage() {
       setError("Impossible de lire certains fichiers CSV.");
     } finally {
       setLoadingData(false);
-      event.target.value = "";
     }
+  };
+
+  const handleCsvUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    await processCsvFiles(event.target.files ?? []);
+    event.target.value = "";
   };
 
   const handleApplyCsv = () => {
@@ -1054,6 +1060,21 @@ export function JsonMetricsPage() {
                           className="hidden"
                         />
                       </label>
+                      <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)] cursor-pointer">
+                        <span className="material-symbols-outlined text-base">folder_open</span>
+                        Importer dossier JSON
+                        <input
+                          type="file"
+                          multiple
+                          // @ts-ignore - webkitdirectory is supported by Chromium
+                          webkitdirectory="true"
+                          onChange={(event) => {
+                            processJsonFiles(event.target.files ?? []);
+                            event.target.value = "";
+                          }}
+                          className="hidden"
+                        />
+                      </label>
                     </div>
                   </>
                 )}
@@ -1087,6 +1108,22 @@ export function JsonMetricsPage() {
                       accept=".csv,text/csv"
                       multiple
                       onChange={handleCsvUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)] cursor-pointer">
+                    <span className="material-symbols-outlined text-base">folder_open</span>
+                    Importer dossier CSV
+                    <input
+                      type="file"
+                      multiple
+                      accept=".csv,text/csv"
+                      // @ts-ignore - webkitdirectory is supported by Chromium
+                      webkitdirectory="true"
+                      onChange={(event) => {
+                        processCsvFiles(event.target.files ?? []);
+                        event.target.value = "";
+                      }}
                       className="hidden"
                     />
                   </label>

@@ -11,6 +11,7 @@ from pathlib import Path
 import cv2
 
 from backend.modules.temperature_extractor import TemperatureExtractor
+from backend.modules.roi_utils import get_scale_factors, iter_station_rois, scale_roi
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,13 @@ class WorkflowTemperatureExtractor(TemperatureExtractor):
                     try:
                         global_detections = self.extract_temperature_values(map_image_path, None)
                         if global_detections:
-                            fallback_temps = self._match_detections_to_stations(global_detections, missing_stations)
+                            image = cv2.imread(str(map_image_path))
+                            image_shape = image.shape if image is not None else None
+                            fallback_temps = self._match_detections_to_stations(
+                                global_detections,
+                                missing_stations,
+                                image_shape=image_shape,
+                            )
                             temps.extend(fallback_temps)
                             logger.info(f"Fallback géographique pour {map_image_path} : {len(fallback_temps)} stations récupérées.")
                     except Exception as exc:
@@ -70,12 +77,17 @@ class WorkflowTemperatureExtractor(TemperatureExtractor):
     def _get_missing_stations(self, current_temps):
         """Identifie les stations de la config ROI qui n'ont pas de détection."""
         detected_names = {t.get("name") for t in current_temps if t.get("name")}
-        return [name for name in self.roi_config.keys() if name not in detected_names]
+        return [
+            name
+            for name, _ in iter_station_rois(self.roi_config)
+            if name not in detected_names
+        ]
 
-    def _match_detections_to_stations(self, detections, missing_station_names):
+    def _match_detections_to_stations(self, detections, missing_station_names, image_shape=None):
         """Associe les détections sans nom aux stations manquantes les plus proches."""
         import math
         matched = []
+        scale_x, scale_y = get_scale_factors(self.roi_config, image_shape)
         # On ne garde que les détections qui n'ont pas encore de nom
         anonymous_detections = [d for d in detections if not d.get("name")]
         
@@ -84,9 +96,14 @@ class WorkflowTemperatureExtractor(TemperatureExtractor):
             # Centre théorique de la station (moyenne des ROI tmin/tmax)
             tmin_roi = rois.get("tmin_roi")
             tmax_roi = rois.get("tmax_roi")
-            if not tmin_roi and not tmax_roi: continue
-            
+            if not tmin_roi and not tmax_roi:
+                continue
+
             ref_roi = tmin_roi or tmax_roi
+            if scale_x != 1.0 or scale_y != 1.0:
+                ref_roi = scale_roi(ref_roi, scale_x, scale_y, pad=0, image_shape=image_shape)
+            if not ref_roi:
+                continue
             target_cx = (ref_roi[0] + ref_roi[2]) / 2
             target_cy = (ref_roi[1] + ref_roi[3]) / 2
             

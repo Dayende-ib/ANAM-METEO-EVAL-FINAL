@@ -36,7 +36,6 @@ class DataIntegrator:
         self.stations_map = {
             "Ouagadougou": {"lat": 12.35, "lon": -1.52},
             "Bobo-Dioulasso": {"lat": 11.17, "lon": -4.32},
-            "Kaya": {"lat": 13.10, "lon": -1.08},
             "Dori": {"lat": 14.03, "lon": -0.03},
             "Fada N'Gourma": {"lat": 12.07, "lon": 0.35},
             "Ouahigouya": {"lat": 13.58, "lon": -2.43},
@@ -45,8 +44,6 @@ class DataIntegrator:
             "Gaoua": {"lat": 10.33, "lon": -3.18},
             "Pô": {"lat": 11.17, "lon": -1.15},
             "Bogandé": {"lat": 12.98, "lon": -0.13},
-            "Koudougou": {"lat": 12.25, "lon": -2.37},
-            "Tenkodogo": {"lat": 11.77, "lon": -0.38},
         }
 
         for name, coords in self.stations_map.items():

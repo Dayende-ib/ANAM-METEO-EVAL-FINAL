@@ -171,6 +171,39 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+async function requestJsonWithFallback<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    return await requestJson<T>(path, init);
+  } catch (error) {
+    const altBase = API_BASE.endsWith("/api") ? `${API_BASE}/v1` : null;
+    if (!altBase) {
+      throw error;
+    }
+    const url = `${altBase}${path.startsWith("/") ? path : `/${path}`}`;
+    const response = await fetch(url, {
+      ...init,
+      headers: init?.headers,
+    });
+    const text = await response.text();
+    let payload: unknown = null;
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = null;
+      }
+    }
+    if (!response.ok) {
+      const message = text || `Request failed (${response.status})`;
+      throw new ApiError(message, { status: response.status });
+    }
+    if (payload === null) {
+      throw new Error(`Invalid API response at ${url}`);
+    }
+    return unwrapData<T>(payload) as T;
+  }
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   return requestJson<T>(path, {
     method: "POST",
@@ -539,11 +572,11 @@ export interface JsonMetricsFilePayload {
 }
 
 export async function fetchJsonMetricsFiles() {
-  return requestJson<JsonMetricsFilesResponse>(`/json-metrics/files`);
+  return requestJsonWithFallback<JsonMetricsFilesResponse>(`/json-metrics/files`);
 }
 
 export async function fetchJsonMetricsFile(path: string) {
-  return requestJson<JsonMetricsFilePayload>(
+  return requestJsonWithFallback<JsonMetricsFilePayload>(
     `/json-metrics/file?path=${encodeURIComponent(path)}`,
   );
 }
