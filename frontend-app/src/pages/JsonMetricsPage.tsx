@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Layout } from "../components/Layout";
 import { ErrorPanel, LoadingPanel } from "../components/StatusPanel";
 import {
@@ -87,10 +87,16 @@ const normalizeIconKey = (label?: string | null) =>
     .trim();
 
 const ICON_NAME_TO_CODE: Record<string, string> = {
+  // Pictogrammes météo standards
   "orages avec pluies isoles": "TSRA",
   "orages avec pluies isolés": "TSRA",
   "orages avec pluies": "TSRA",
+  "pluies orageuses isolees": "TSRA",
+  "pluies orageuses isolées": "TSRA",
+  "pluie orageuse": "TSRA",
+  "pluie": "RA",
   "pluies": "RA",
+  "orage": "TS",
   "orages": "TS",
   "orages isoles": "TS",
   "orages isolés": "TS",
@@ -98,6 +104,14 @@ const ICON_NAME_TO_CODE: Record<string, string> = {
   "temps nuageux": "NSW",
   "temps ensoleille": "NSW",
   "temps ensoleillé": "NSW",
+  "ciel couvert": "NSW",
+  "ciel dégagé": "NSW",
+  "nuageux": "NSW",
+  "ensoleillé": "NSW",
+  "ensoleille": "NSW",
+  "partiellement_nuageux": "NSW",
+  
+  // Pictogrammes avec poussière
   "orages avec pluies isoles avec poussiere": "DUTSRA",
   "orages avec pluies isolés avec poussière": "DUTSRA",
   "pluies avec poussiere": "DURA",
@@ -114,6 +128,11 @@ const ICON_NAME_TO_CODE: Record<string, string> = {
   "temps ensoleillé avec poussière": "DU",
   "poussiere": "DU",
   "poussière": "DU",
+  "poussière en suspension": "DU",
+  "ciel couvert avec poussière": "DU",
+  "ciel nuageux avec poussière": "DU",
+  "vent sable": "DU",
+  "vent_sable": "DU",
 };
 
 const ICON_CODES = new Set([
@@ -235,18 +254,47 @@ const toNumber = (value: string) => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
+const parseMonthToken = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const numeric = Number(trimmed);
+  if (!Number.isNaN(numeric) && numeric >= 1 && numeric <= 12) {
+    return String(Math.trunc(numeric)).padStart(2, "0");
+  }
+  const normalized = trimmed
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  const monthMap: Record<string, string> = {
+    janvier: "01",
+    fevrier: "02",
+    mars: "03",
+    avril: "04",
+    mai: "05",
+    juin: "06",
+    juillet: "07",
+    aout: "08",
+    septembre: "09",
+    octobre: "10",
+    novembre: "11",
+    decembre: "12",
+  };
+  return monthMap[normalized] ?? "";
+};
+
 const csvRowsToEntries = (rows: CsvRow[], source: string): JsonEntry[] => {
   const grouped = new Map<string, JsonEntry>();
   rows.forEach((row) => {
     const year = row.annee || row.year || "";
-    const month = row.mois || row.month || "";
+    const monthToken = row.mois || row.month || "";
+    const month = parseMonthToken(monthToken);
     const day = row.jour || row.day || "";
     const date =
       row.date ||
       row.bulletin_date ||
       row.date_bulletin ||
       (year && month && day
-        ? `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+        ? `${year}-${month}-${String(day).padStart(2, "0")}`
         : "");
     const station =
       row.localites ||
@@ -330,19 +378,27 @@ const csvRowsToEntries = (rows: CsvRow[], source: string): JsonEntry[] => {
   return Array.from(grouped.values());
 };
 
-const buildPairs = (entries: JsonEntry[]): StationPair[] => {
-  const byDate = new Map<
-    string,
-    {
-      observed?: Map<string, JsonStation>;
-      forecast?: Map<string, JsonStation>;
-    }
-  >();
+const shiftDate = (dateStr: string, days: number) => {
+  const [yearStr, monthStr, dayStr] = dateStr.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  if (!year || !month || !day) return null;
+  const base = new Date(Date.UTC(year, month - 1, day));
+  base.setUTCDate(base.getUTCDate() + days);
+  const yyyy = base.getUTCFullYear();
+  const mm = String(base.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(base.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const buildPairs = (entries: JsonEntry[], usePrevDay: boolean) => {
+  const observedByDate = new Map<string, Map<string, JsonStation>>();
+  const forecastByDate = new Map<string, Map<string, JsonStation>>();
 
   entries.forEach((entry) => {
     const dateKey = entry.date;
     if (!dateKey) return;
-    const bucket = byDate.get(dateKey) ?? {};
     const stationsMap = new Map<string, JsonStation>();
     entry.stations.forEach((station) => {
       const key = normalizeStation(station.nom);
@@ -350,21 +406,35 @@ const buildPairs = (entries: JsonEntry[]): StationPair[] => {
       stationsMap.set(key, station);
     });
     if (entry.mapType === "observed") {
-      bucket.observed = stationsMap;
+      observedByDate.set(dateKey, stationsMap);
     } else if (entry.mapType === "forecast") {
-      bucket.forecast = stationsMap;
+      forecastByDate.set(dateKey, stationsMap);
     }
-    byDate.set(dateKey, bucket);
   });
 
   const pairs: StationPair[] = [];
-  byDate.forEach((bucket, dateKey) => {
-    if (!bucket.observed || !bucket.forecast) return;
-    bucket.observed.forEach((obs, station) => {
-      const fore = bucket.forecast?.get(station);
+  const skippedDates: Array<{ date: string; reason: string }> = [];
+  observedByDate.forEach((observedStations, obsDate) => {
+    const forecastDate = usePrevDay ? shiftDate(obsDate, -1) : obsDate;
+    if (!forecastDate) {
+      skippedDates.push({ date: obsDate, reason: "Date invalide" });
+      return;
+    }
+    const forecastStations = forecastByDate.get(forecastDate);
+    if (!forecastStations) {
+      skippedDates.push({
+        date: obsDate,
+        reason: usePrevDay
+          ? `Prévision manquante (J-1: ${forecastDate})`
+          : "Prévision manquante (même jour)",
+      });
+      return;
+    }
+    observedStations.forEach((obs, station) => {
+      const fore = forecastStations.get(station);
       if (!fore) return;
       pairs.push({
-        date: dateKey,
+        date: obsDate,
         station,
         tminObs: typeof obs.tmin === "number" ? obs.tmin : null,
         tmaxObs: typeof obs.tmax === "number" ? obs.tmax : null,
@@ -376,7 +446,7 @@ const buildPairs = (entries: JsonEntry[]): StationPair[] => {
     });
   });
 
-  return pairs;
+  return { pairs, skippedDates };
 };
 
 const computeTemperatureMetrics = (pairs: StationPair[]): TemperatureMetrics => {
@@ -548,11 +618,21 @@ export function JsonMetricsPage() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [entries, setEntries] = useState<JsonEntry[]>([]);
+  const [jsonEntries, setJsonEntries] = useState<JsonEntry[]>([]);
+  const [csvEntries, setCsvEntries] = useState<JsonEntry[]>([]);
+  const [dataSource, setDataSource] = useState<"json" | "csv">("json");
   const [metricsMode, setMetricsMode] = useState<MetricsMode>("station");
   const [selectedStation, setSelectedStation] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [selectedYear, setSelectedYear] = useState<string>("");
+  const [showSkippedDates, setShowSkippedDates] = useState<boolean>(false);
+  const [csvArranged, setCsvArranged] = useState<boolean>(false);
+  const [csvReadyEntries, setCsvReadyEntries] = useState<JsonEntry[]>([]);
+  const [exporting, setExporting] = useState<boolean>(false);
+  const tablesRef = useRef<HTMLDivElement | null>(null);
+  const temperatureRef = useRef<HTMLDivElement | null>(null);
+  const contingencyRef = useRef<HTMLDivElement | null>(null);
+  const scoresRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const loadFiles = async () => {
@@ -630,12 +710,12 @@ export function JsonMetricsPage() {
           };
         })
         .filter((entry) => entry.date && entry.mapType);
-      setEntries(normalized);
+      setJsonEntries(normalized);
       setError(null);
     } catch (err) {
       console.error("Echec du chargement des données JSON:", err);
       setError("Echec du chargement des données JSON.");
-      setEntries([]);
+      setJsonEntries([]);
     } finally {
       setLoadingData(false);
     }
@@ -676,7 +756,7 @@ export function JsonMetricsPage() {
           };
         })
         .filter((entry) => entry.date && entry.mapType);
-      setEntries((prev) => [...prev, ...normalized]);
+      setJsonEntries((prev) => [...prev, ...normalized]);
       setError(null);
     } catch (err) {
       console.error("Echec du chargement local:", err);
@@ -702,7 +782,7 @@ export function JsonMetricsPage() {
       if (parsedEntries.length === 0) {
         setError("Aucune donnée exploitable trouvée dans le CSV.");
       } else {
-        setEntries((prev) => [...prev, ...parsedEntries]);
+        setCsvEntries((prev) => [...prev, ...parsedEntries]);
         setSelectedStation("");
         setSelectedMonth("");
         setSelectedYear("");
@@ -717,7 +797,51 @@ export function JsonMetricsPage() {
     }
   };
 
-  const pairs = useMemo(() => buildPairs(entries), [entries]);
+  const handleApplyCsv = () => {
+    setCsvReadyEntries(csvEntries);
+  };
+
+  const exportTables = async (format: "png" | "pdf", target: HTMLElement | null, name: string) => {
+    if (!target) return;
+    try {
+      setExporting(true);
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ]);
+      const canvas = await html2canvas(target, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      if (format === "png") {
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = `${name}.png`;
+        link.click();
+        return;
+      }
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? "l" : "p",
+        unit: "pt",
+        format: [canvas.width, canvas.height],
+      });
+      pdf.addImage(dataUrl, "PNG", 0, 0, canvas.width, canvas.height);
+      pdf.save(`${name}.pdf`);
+    } catch (err) {
+      console.error("Echec export tables:", err);
+      setError("Impossible d'exporter les tableaux.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const entries = dataSource === "json" ? jsonEntries : csvReadyEntries;
+  const usePrevDay = dataSource === "json" || !csvArranged;
+  const { pairs, skippedDates } = useMemo(
+    () => buildPairs(entries, usePrevDay),
+    [entries, usePrevDay],
+  );
 
   const stationOptions = useMemo(() => {
     const set = new Set<string>();
@@ -754,6 +878,15 @@ export function JsonMetricsPage() {
       setSelectedYear(yearOptions[yearOptions.length - 1]);
     }
   }, [selectedYear, yearOptions]);
+
+  useEffect(() => {
+    setSelectedStation("");
+    setSelectedMonth("");
+    setSelectedYear("");
+    setShowSkippedDates(false);
+    setCsvArranged(false);
+    setCsvReadyEntries([]);
+  }, [dataSource]);
 
   const filteredPairs = useMemo(() => {
     if (metricsMode === "station") {
@@ -800,94 +933,152 @@ export function JsonMetricsPage() {
           <div className="surface-panel p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-ink">Fichiers JSON disponibles</h2>
+                <h2 className="text-lg font-semibold text-ink">Sources de données</h2>
                 <p className="text-sm text-muted">
-                  Sélectionnez les fichiers observés/prévus à comparer.
+                  Séparez l'import JSON et CSV pour éviter les mélanges.
                 </p>
-              </div>
-              <div className="text-xs text-muted font-mono">
-                {selectedPaths.length} / {files.length} sélectionnés
               </div>
             </div>
 
-            {loadingFiles ? (
-              <div className="mt-4">
-                <LoadingPanel message="Chargement des fichiers JSON..." />
-              </div>
-            ) : (
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setDataSource("json")}
+                className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                  dataSource === "json"
+                    ? "border-primary-500 bg-primary-50 text-primary-700"
+                    : "border-[var(--border)] text-ink hover:bg-[var(--canvas-strong)]"
+                }`}
+              >
+                Utiliser JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => setDataSource("csv")}
+                className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                  dataSource === "csv"
+                    ? "border-primary-500 bg-primary-50 text-primary-700"
+                    : "border-[var(--border)] text-ink hover:bg-[var(--canvas-strong)]"
+                }`}
+              >
+                Utiliser CSV
+              </button>
+            </div>
+
+            {dataSource === "json" && (
               <>
-                <div className="mt-4 flex flex-wrap gap-3">
+                <div className="mt-4 flex items-center justify-between text-xs text-muted font-mono">
+                  <span>
+                    {selectedPaths.length} / {files.length} sélectionnés
+                  </span>
+                  <span>JSON importés: {jsonEntries.length}</span>
+                </div>
+
+                {loadingFiles ? (
+                  <div className="mt-4">
+                    <LoadingPanel message="Chargement des fichiers JSON..." />
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <input
+                        type="text"
+                        value={fileFilter}
+                        onChange={(event) => setFileFilter(event.target.value)}
+                        placeholder="Rechercher par date, nom, type..."
+                        className="flex-1 min-w-[220px] rounded-xl border border-[var(--border)] bg-[var(--canvas-strong)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleToggleAll}
+                        className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)]"
+                      >
+                        {allSelected ? "Tout désélectionner" : "Tout sélectionner"}
+                      </button>
+                    </div>
+
+                    <div className="mt-4 max-h-[320px] overflow-y-auto rounded-2xl border border-[var(--border)]">
+                      {filteredFiles.length === 0 ? (
+                        <div className="p-4 text-sm text-muted">
+                          Aucun fichier ne correspond au filtre.
+                        </div>
+                      ) : (
+                        <ul className="divide-y divide-[var(--border)]">
+                          {filteredFiles.map((file) => {
+                            const checked = selectedPaths.includes(file.path);
+                            return (
+                              <li key={file.path} className="flex items-center gap-3 px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => handleToggleFile(file.path)}
+                                  className="size-4 accent-primary-500"
+                                />
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-ink">{file.name}</p>
+                                  <p className="text-xs text-muted">
+                                    {file.date ?? "Date inconnue"} · {file.map_type ?? "type inconnu"} ·{" "}
+                                    {file.path}
+                                  </p>
+                                </div>
+                                <span className="text-xs text-muted font-mono">
+                                  {(file.size_bytes / 1024).toFixed(1)} KB
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleLoadData}
+                        disabled={loadingData}
+                        className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-primary-700 disabled:opacity-60"
+                      >
+                        <span className="material-symbols-outlined text-base text-white">
+                          play_circle
+                        </span>
+                        {loadingData ? "Chargement..." : "Charger et calculer"}
+                      </button>
+                      <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)] cursor-pointer">
+                        <span className="material-symbols-outlined text-base">upload_file</span>
+                        Charger JSON local
+                        <input
+                          type="file"
+                          accept="application/json"
+                          multiple
+                          onChange={handleLocalUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {dataSource === "csv" && (
+              <div className="mt-4 space-y-3">
+                <div className="text-xs text-muted font-mono">
+                  CSV importés: {csvEntries.length} · Utilisés: {csvReadyEntries.length}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-muted">
                   <input
-                    type="text"
-                    value={fileFilter}
-                    onChange={(event) => setFileFilter(event.target.value)}
-                    placeholder="Rechercher par date, nom, type..."
-                    className="flex-1 min-w-[220px] rounded-xl border border-[var(--border)] bg-[var(--canvas-strong)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40"
+                    type="checkbox"
+                    checked={csvArranged}
+                    onChange={(event) => setCsvArranged(event.target.checked)}
+                    className="size-4 accent-primary-500"
                   />
-                  <button
-                    type="button"
-                    onClick={handleToggleAll}
-                    className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)]"
-                  >
-                    {allSelected ? "Tout désélectionner" : "Tout sélectionner"}
-                  </button>
+                  CSV arrangé (données vérifiées) — utiliser chaque ligne sans J-1
+                </label>
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--canvas-strong)] p-4 text-sm text-muted">
+                  Colonnes attendues: ANNEE, MOIS, JOUR, LOCALITES, PREVISIONS, OBSERVATIONS,
+                  TMIN_PREV, TMAX_PREV, TMIN_OBS, TMAX_OBS.
                 </div>
-
-                <div className="mt-4 max-h-[320px] overflow-y-auto rounded-2xl border border-[var(--border)]">
-                  {filteredFiles.length === 0 ? (
-                    <div className="p-4 text-sm text-muted">Aucun fichier ne correspond au filtre.</div>
-                  ) : (
-                    <ul className="divide-y divide-[var(--border)]">
-                      {filteredFiles.map((file) => {
-                        const checked = selectedPaths.includes(file.path);
-                        return (
-                          <li key={file.path} className="flex items-center gap-3 px-4 py-3">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => handleToggleFile(file.path)}
-                              className="size-4 accent-primary-500"
-                            />
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-ink">{file.name}</p>
-                              <p className="text-xs text-muted">
-                                {file.date ?? "Date inconnue"} · {file.map_type ?? "type inconnu"} ·{" "}
-                                {file.path}
-                              </p>
-                            </div>
-                            <span className="text-xs text-muted font-mono">
-                              {(file.size_bytes / 1024).toFixed(1)} KB
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleLoadData}
-                    disabled={loadingData}
-                    className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-ink shadow-lg hover:bg-primary-700 disabled:opacity-60"
-                  >
-                    <span className="material-symbols-outlined text-base">
-                      play_circle
-                    </span>
-                    {loadingData ? "Chargement..." : "Charger et calculer"}
-                  </button>
-                  <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)] cursor-pointer">
-                    <span className="material-symbols-outlined text-base">upload_file</span>
-                    Charger JSON local
-                    <input
-                      type="file"
-                      accept="application/json"
-                      multiple
-                      onChange={handleLocalUpload}
-                      className="hidden"
-                    />
-                  </label>
+                <div className="flex flex-wrap items-center gap-3">
                   <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)] cursor-pointer">
                     <span className="material-symbols-outlined text-base">table_view</span>
                     Charger CSV local
@@ -899,8 +1090,19 @@ export function JsonMetricsPage() {
                       className="hidden"
                     />
                   </label>
+                  <button
+                    type="button"
+                    onClick={handleApplyCsv}
+                    disabled={csvEntries.length === 0}
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-primary-700 disabled:opacity-60"
+                  >
+                    <span className="material-symbols-outlined text-base text-white">
+                      play_circle
+                    </span>
+                    Lancer les calculs
+                  </button>
                 </div>
-              </>
+              </div>
             )}
           </div>
 
@@ -986,6 +1188,18 @@ export function JsonMetricsPage() {
 
             <div className="mt-6 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--canvas-strong)] p-4">
               <p className="text-sm text-muted">Paires utilisées: {filteredPairs.length}</p>
+              <div className="mt-3 flex items-center gap-2 text-xs">
+                <input
+                  id="toggle-skipped-dates"
+                  type="checkbox"
+                  checked={showSkippedDates}
+                  onChange={(event) => setShowSkippedDates(event.target.checked)}
+                  className="size-4 accent-primary-500"
+                />
+                <label htmlFor="toggle-skipped-dates" className="text-muted">
+                  Afficher les dates ignorées ({skippedDates.length})
+                </label>
+              </div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 <span className="rounded-full bg-primary-50 px-3 py-1 text-primary-700">
                   Mode: {MODE_LABELS[metricsMode]}
@@ -1010,16 +1224,76 @@ export function JsonMetricsPage() {
                 Dernière mise à jour: {entries.length ? new Date().toLocaleString() : "--"}
               </p>
             </div>
+            {showSkippedDates && skippedDates.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                <h4 className="text-sm font-semibold text-ink">Dates ignorées</h4>
+                <ul className="mt-2 max-h-44 overflow-y-auto text-xs text-muted">
+                  {skippedDates.map((item) => (
+                    <li key={`${item.date}-${item.reason}`} className="py-1">
+                      {item.date} — {item.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 
         {loadingData && <LoadingPanel message="Calcul des métriques..." />}
 
-        {!loadingData && entries.length > 0 && (hasTemperatureMetrics || hasWeatherMetrics) && (
-          <div className="grid gap-6 lg:grid-cols-2">
+        {!loadingData && entries.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => exportTables("png", tablesRef.current, "tables-meteo")}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)] disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-base">image</span>
+              Exporter PNG
+            </button>
+            <button
+              type="button"
+              onClick={() => exportTables("pdf", tablesRef.current, "tables-meteo")}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--canvas-strong)] disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-base">picture_as_pdf</span>
+              Exporter PDF
+            </button>
+          </div>
+        )}
+
+        <div ref={tablesRef} className="space-y-6">
+          {!loadingData && entries.length > 0 && (hasTemperatureMetrics || hasWeatherMetrics) && (
+            <div className="grid gap-6 lg:grid-cols-2">
             {hasTemperatureMetrics && (
-              <div className="surface-panel p-6">
-                <h3 className="text-lg font-semibold text-ink">Température</h3>
+              <div className="surface-panel p-6" ref={temperatureRef}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-ink">Température</h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        exportTables("png", temperatureRef.current, "table-temperature")
+                      }
+                      disabled={exporting}
+                      className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] disabled:opacity-60"
+                    >
+                      PNG
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        exportTables("pdf", temperatureRef.current, "table-temperature")
+                      }
+                      disabled={exporting}
+                      className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] disabled:opacity-60"
+                    >
+                      PDF
+                    </button>
+                  </div>
+                </div>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <div className="rounded-2xl border border-[var(--border)] bg-[var(--canvas-strong)] p-4">
                     <p className="text-xs uppercase tracking-[0.3em] text-muted">MAE</p>
@@ -1097,10 +1371,10 @@ export function JsonMetricsPage() {
               </div>
             )}
           </div>
-        )}
+          )}
 
-        {!loadingData && (
-          <div className="surface-panel p-6">
+          {!loadingData && (
+            <div className="surface-panel p-6" ref={contingencyRef}>
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-ink">Table de contingence</h3>
@@ -1112,99 +1386,102 @@ export function JsonMetricsPage() {
                 {confusion?.labels?.length ?? 0} classes
               </span>
             </div>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportTables("png", contingencyRef.current, "table-contingence")}
+                disabled={exporting}
+                className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] disabled:opacity-60"
+              >
+                PNG
+              </button>
+              <button
+                type="button"
+                onClick={() => exportTables("pdf", contingencyRef.current, "table-contingence")}
+                disabled={exporting}
+                className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] disabled:opacity-60"
+              >
+                PDF
+              </button>
+            </div>
             <div className="mt-4 overflow-x-auto">
               {confusion?.labels && confusion.matrix ? (
                 <table className="min-w-full text-xs">
                   <thead>
                   <tr className="text-left text-muted">
                     <th className="py-2 pr-2"></th>
-                    {confusion.labels.map((label) => (
+                    {confusion.labels
+                      .map((label, index) => ({ label, index }))
+                      .filter((item) => item.label !== "UNK")
+                      .map((item) => (
                       <th
-                        key={`obs-${label}`}
-                        className={`py-2 px-2 text-center font-semibold ${
-                          label === "UNK" ? "text-muted" : ""
-                        }`}
+                        key={`obs-${item.label}`}
+                        className="py-2 px-2 text-center font-semibold"
                       >
-                        Obs: {label}
+                        Obs: {item.label}
                       </th>
                     ))}
                     <th className="py-2 px-2 text-center font-semibold">Total</th>
                   </tr>
                   </thead>
                   <tbody>
-                  {confusion.labels.map((rowLabel, rowIndex) => {
-                    const isRowUnknown = rowLabel === "UNK";
-                    const rowTotal = isRowUnknown
-                      ? 0
-                      : confusion.labels.reduce((sum, _, colIdx) => {
-                          if (confusion.labels[colIdx] === "UNK") return sum;
-                          const value = confusion.matrix[colIdx]?.[rowIndex] ?? 0;
-                          return sum + value;
-                        }, 0);
+                  {confusion.labels
+                    .map((rowLabel, rowIndex) => ({ rowLabel, rowIndex }))
+                    .filter((item) => item.rowLabel !== "UNK")
+                    .map(({ rowLabel, rowIndex }) => {
+                    const rowTotal = confusion.labels
+                      .map((colLabel, colIdx) => ({ colLabel, colIdx }))
+                      .filter((item) => item.colLabel !== "UNK")
+                      .reduce((sum, item) => {
+                        const value = confusion.matrix[item.colIdx]?.[rowIndex] ?? 0;
+                        return sum + value;
+                      }, 0);
                     return (
                       <tr key={`row-${rowIndex}`} className="border-t border-[var(--border)]">
-                        <td
-                          className={`py-2 pr-2 font-semibold whitespace-nowrap ${
-                            isRowUnknown ? "text-muted" : "text-ink"
-                          }`}
-                        >
+                        <td className="py-2 pr-2 font-semibold whitespace-nowrap text-ink">
                           Prév: {rowLabel}
                         </td>
-                        {confusion.labels.map((colLabel, colIndex) => {
-                          const value = confusion.matrix[colIndex]?.[rowIndex] ?? 0;
+                        {confusion.labels
+                          .map((colLabel, colIndex) => ({ colLabel, colIndex }))
+                          .filter((item) => item.colLabel !== "UNK")
+                          .map((item) => {
+                          const value = confusion.matrix[item.colIndex]?.[rowIndex] ?? 0;
                           const intensity = maxConfusionValue ? value / maxConfusionValue : 0;
-                          const isColUnknown = colLabel === "UNK";
                           return (
                             <td
-                              key={`cell-${rowIndex}-${colIndex}`}
+                              key={`cell-${rowIndex}-${item.colIndex}`}
                               className="py-2 px-2 text-center font-mono"
                               style={{
-                                backgroundColor: isRowUnknown || isColUnknown
-                                  ? "rgba(148, 163, 184, 0.15)"
-                                  : `rgba(59, 130, 246, ${intensity * 0.25})`,
-                                color:
-                                  isRowUnknown || isColUnknown
-                                    ? "inherit"
-                                    : intensity > 0.55
-                                      ? "white"
-                                      : "inherit",
+                                backgroundColor: `rgba(59, 130, 246, ${intensity * 0.25})`,
+                                color: intensity > 0.55 ? "white" : "inherit",
                               }}
                             >
                               {value}
                             </td>
                           );
                         })}
-                        <td
-                          className={`py-2 px-2 text-center font-mono font-semibold ${
-                            isRowUnknown ? "text-muted" : "text-ink"
-                          }`}
-                        >
-                          {isRowUnknown ? "--" : rowTotal}
+                        <td className="py-2 px-2 text-center font-mono font-semibold text-ink">
+                          {rowTotal}
                         </td>
                       </tr>
                     );
                   })}
                   <tr className="border-t border-[var(--border)] bg-[var(--canvas-strong)]">
                     <td className="py-2 pr-2 font-semibold text-ink whitespace-nowrap">Total</td>
-                    {confusion.labels.map((label, colIndex) => {
-                      if (label === "UNK") {
-                        return (
-                          <td
-                            key={`total-col-${colIndex}`}
-                            className="py-2 px-2 text-center font-mono font-semibold text-muted"
-                          >
-                            --
-                          </td>
-                        );
-                      }
-                      const colTotal = confusion.labels.reduce((sum, _, rowIdx) => {
-                        if (confusion.labels[rowIdx] === "UNK") return sum;
-                        const value = confusion.matrix[colIndex]?.[rowIdx] ?? 0;
-                        return sum + value;
-                      }, 0);
+                    {confusion.labels
+                      .map((label, colIndex) => ({ label, colIndex }))
+                      .filter((item) => item.label !== "UNK")
+                      .map((item) => {
+                      const colTotal = confusion.labels
+                        .map((rowLabel, rowIdx) => ({ rowLabel, rowIdx }))
+                        .filter((row) => row.rowLabel !== "UNK")
+                        .reduce((sum, row) => {
+                          const value = confusion.matrix[item.colIndex]?.[row.rowIdx] ?? 0;
+                          return sum + value;
+                        }, 0);
                       return (
                         <td
-                          key={`total-col-${colIndex}`}
+                          key={`total-col-${item.colIndex}`}
                           className="py-2 px-2 text-center font-mono font-semibold text-ink"
                         >
                           {colTotal}
@@ -1212,17 +1489,19 @@ export function JsonMetricsPage() {
                       );
                     })}
                     <td className="py-2 px-2 text-center font-mono font-semibold text-ink">
-                      {confusion.labels.reduce((sum, _, rowIdx) => {
-                        if (confusion.labels[rowIdx] === "UNK") return sum;
-                        return (
-                          sum +
-                          confusion.labels.reduce((rowSum, _, colIdx) => {
-                            if (confusion.labels[colIdx] === "UNK") return rowSum;
-                            const value = confusion.matrix[colIdx]?.[rowIdx] ?? 0;
-                            return rowSum + value;
-                          }, 0)
-                        );
-                      }, 0)}
+                      {confusion.labels
+                        .map((rowLabel, rowIdx) => ({ rowLabel, rowIdx }))
+                        .filter((row) => row.rowLabel !== "UNK")
+                        .reduce((sum, row) => {
+                          const rowTotal = confusion.labels
+                            .map((colLabel, colIdx) => ({ colLabel, colIdx }))
+                            .filter((col) => col.colLabel !== "UNK")
+                            .reduce((rowSum, col) => {
+                              const value = confusion.matrix[col.colIdx]?.[row.rowIdx] ?? 0;
+                              return rowSum + value;
+                            }, 0);
+                          return sum + rowTotal;
+                        }, 0)}
                     </td>
                   </tr>
                   </tbody>
@@ -1238,11 +1517,11 @@ export function JsonMetricsPage() {
                 </div>
               )}
             </div>
-          </div>
-        )}
+            </div>
+          )}
 
-        {!loadingData && contingencyScores.rows.length > 0 && (
-          <div className="surface-panel p-6">
+          {!loadingData && contingencyScores.rows.length > 0 && (
+            <div className="surface-panel p-6" ref={scoresRef}>
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-ink">Scores des prévisions</h3>
@@ -1253,6 +1532,24 @@ export function JsonMetricsPage() {
               <span className="text-xs text-muted font-mono">
                 PC: {contingencyScores.pc !== null ? `${formatScore(contingencyScores.pc, 2)}%` : "ND"}
               </span>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => exportTables("png", scoresRef.current, "table-scores")}
+                disabled={exporting}
+                className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] disabled:opacity-60"
+              >
+                PNG
+              </button>
+              <button
+                type="button"
+                onClick={() => exportTables("pdf", scoresRef.current, "table-scores")}
+                disabled={exporting}
+                className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] disabled:opacity-60"
+              >
+                PDF
+              </button>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-xs border border-[var(--border)]">
@@ -1328,8 +1625,9 @@ export function JsonMetricsPage() {
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     </Layout>
   );
