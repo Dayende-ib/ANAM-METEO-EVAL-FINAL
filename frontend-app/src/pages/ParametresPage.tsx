@@ -95,12 +95,19 @@ const loadSettings = (): Settings => {
     const raw = window.localStorage.getItem(SETTINGS_KEY);
     const storedTheme = window.localStorage.getItem(THEME_KEY);
     const base = { ...DEFAULT_SETTINGS };
-    if (storedTheme === "dark" || storedTheme === "light") {
-      base.appearance = { ...base.appearance, theme: storedTheme };
+    if (!raw) {
+      if (storedTheme === "dark" || storedTheme === "light") {
+        base.appearance = { ...base.appearance, theme: storedTheme };
+      }
+      return base;
     }
-    if (!raw) return base;
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return deepMerge(base, parsed);
+    const merged = deepMerge(base, parsed);
+    // anam-theme (set by the header toggle) always takes priority over saved settings
+    if (storedTheme === "dark" || storedTheme === "light") {
+      merged.appearance = { ...merged.appearance, theme: storedTheme };
+    }
+    return merged;
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -128,7 +135,9 @@ const ToggleRow = ({
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={`relative h-7 w-12 rounded-full border border-[var(--border)] transition-colors ${
-        checked ? "bg-emerald-500/80" : "bg-[var(--canvas-strong)]"
+        checked
+          ? "bg-gradient-to-br from-primary-500 to-secondary-600"
+          : "bg-[var(--canvas-strong)]"
       }`}
     >
       <span

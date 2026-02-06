@@ -321,9 +321,9 @@ export function MapPage() {
   };
 
   return (
-    <Layout title="Carte interactive">
+    <Layout title="Carte interactive" fullWidth>
       <div className="flex flex-col lg:flex-row">
-        <aside className="flex w-full lg:w-72 flex-col border-r border-[var(--border)]/10 bg-[var(--surface)] p-6 gap-6 overflow-y-auto min-h-0">
+        <aside className="flex w-full lg:w-48 flex-col flex-shrink-0 border-r border-[var(--border)]/10 bg-[var(--surface)] p-3 gap-4 overflow-y-auto min-h-0">
           <div>
             <h2 className="text-2xl font-bold text-ink">Controles</h2>
           </div>
@@ -379,7 +379,7 @@ export function MapPage() {
             </div>
           </div>
         </aside>
-        <section className="flex flex-1 flex-col gap-4 p-6 min-h-0">
+        <section className="flex flex-1 flex-col gap-3 p-2 min-h-0">
           <header>
             <h1 className="text-4xl font-black tracking-tight text-ink">Carte interactive</h1>
             <p className="text-muted">
@@ -408,7 +408,7 @@ export function MapPage() {
               </button>
             ))}
           </div>
-          <div className="grid gap-4 lg:grid-cols-[1fr_320px] flex-1 min-h-0">
+          <div className="grid gap-2 lg:grid-cols-[1fr_200px] flex-1 min-h-0">
             <div className="relative flex flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)]/10 bg-[var(--surface)] min-h-[520px]">
               <MapContainer
                 center={[mapCenter.lat, mapCenter.lng]}
@@ -485,7 +485,7 @@ export function MapPage() {
                 </div>
               )}
             </div>
-            <aside className="surface-panel p-4 space-y-4 overflow-y-auto max-h-full">
+            <aside className="surface-panel p-3 space-y-3 overflow-y-auto max-h-full">
               <div>
                 <h2 className="text-lg font-semibold text-ink">Details station</h2>
                 <p className="text-xs text-muted">

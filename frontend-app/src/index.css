@@ -6,34 +6,36 @@
 @tailwind utilities;
 
 :root {
-  --canvas: #f2f5f1;
-  --canvas-strong: #e6ece5;
-  --surface: #ffffff;
-  --surface-strong: #f7f9f7;
-  --ink: #1d2420;
-  --muted: #5b6a63;
-  --accent: #0f766e;
-  --accent-strong: #0b4f46;
-  --accent-warm: #f59e0b;
-  --accent-cool: #2563eb;
-  --border: #d6ddd6;
+  --canvas: #F0F4F8;
+  --canvas-strong: #E2E8F0;
+  --surface: #FFFFFF;
+  --surface-strong: #F8FAFC;
+  --ink: #0F172A;
+  --muted: #64748B;
+  --accent: #0A9AFF;
+  --accent-strong: #0862B8;
+  --accent-warm: #F59E0B;
+  --accent-cool: #3B82F6;
+  --border: #CBD5E1;
+  --primary-glow: rgba(10, 154, 255, 0.15);
   font-family: "IBM Plex Sans", sans-serif;
   color: var(--ink);
   background-color: var(--canvas);
 }
 
 .dark {
-  --canvas: #0b1116;
-  --canvas-strong: #141c24;
-  --surface: #101824;
-  --surface-strong: #18212e;
-  --ink: #e6edf3;
-  --muted: #a9b6c4;
-  --accent: #22c3a6;
-  --accent-strong: #159a81;
-  --accent-warm: #f4b546;
-  --accent-cool: #5aa2ff;
-  --border: #2a3642;
+  --canvas: #070D1A;
+  --canvas-strong: #0E1726;
+  --surface: #0C1628;
+  --surface-strong: #132035;
+  --ink: #E2E8F0;
+  --muted: #94A3B8;
+  --accent: #38BDF8;
+  --accent-strong: #0EA5E9;
+  --accent-warm: #FBBF24;
+  --accent-cool: #60A5FA;
+  --border: #1E3050;
+  --primary-glow: rgba(56, 189, 248, 0.12);
   color: var(--ink);
   background-color: var(--canvas);
 }
@@ -48,17 +50,17 @@ body {
   margin: 0;
   overflow: hidden;
   background-image:
-    radial-gradient(circle at 12% 10%, rgba(15, 118, 110, 0.14), transparent 52%),
-    radial-gradient(circle at 88% 0%, rgba(37, 99, 235, 0.12), transparent 42%),
+    radial-gradient(circle at 12% 10%, rgba(10, 154, 255, 0.08), transparent 52%),
+    radial-gradient(circle at 88% 0%, rgba(59, 130, 246, 0.06), transparent 42%),
     linear-gradient(120deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0));
   background-attachment: fixed;
 }
 
 .dark body {
   background-image:
-    radial-gradient(circle at 10% 15%, rgba(34, 195, 166, 0.18), transparent 55%),
-    radial-gradient(circle at 85% 10%, rgba(90, 162, 255, 0.16), transparent 45%),
-    linear-gradient(120deg, rgba(10, 14, 20, 0.9), rgba(8, 10, 14, 0.6));
+    radial-gradient(circle at 10% 15%, rgba(10, 154, 255, 0.12), transparent 55%),
+    radial-gradient(circle at 85% 10%, rgba(59, 130, 246, 0.1), transparent 45%),
+    linear-gradient(120deg, rgba(7, 13, 26, 0.95), rgba(7, 13, 26, 0.7));
 }
 
 .material-symbols-outlined {
@@ -73,7 +75,7 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 1.25rem;
-  box-shadow: 0 20px 45px -40px rgba(15, 22, 18, 0.65), 0 12px 28px -24px rgba(15, 22, 18, 0.45);
+  box-shadow: 0 20px 45px -40px rgba(10, 30, 60, 0.5), 0 12px 28px -24px rgba(10, 30, 60, 0.3);
 }
 
 .dark .surface-panel {
@@ -122,13 +124,13 @@ body {
 
 @keyframes pulse-soft {
   0% {
-    box-shadow: 0 0 0 0 rgba(15, 118, 110, 0.25);
+    box-shadow: 0 0 0 0 rgba(10, 154, 255, 0.3);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(15, 118, 110, 0);
+    box-shadow: 0 0 0 10px rgba(10, 154, 255, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(15, 118, 110, 0);
+    box-shadow: 0 0 0 0 rgba(10, 154, 255, 0);
   }
 }
 
@@ -140,7 +142,7 @@ body {
   animation: pulse-soft 3s ease-in-out infinite;
 }
 
-/* Nouvelles animations pour ExplorationBulletinsPage */
+/* Animations */
 @keyframes slide-in-right {
   from {
     opacity: 0;
@@ -179,6 +181,24 @@ body {
   }
 }
 
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out both;
 }
@@ -195,14 +215,21 @@ body {
   animation: bounce-subtle 2s ease-in-out infinite;
 }
 
-/* Améliorations de transition */
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+/* Transition helpers */
 .transition-smooth {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Focus visible amélioré pour l'accessibilité */
+/* Focus visible for accessibility */
 .focus-visible-ring:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-

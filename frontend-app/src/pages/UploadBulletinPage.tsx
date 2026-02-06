@@ -428,243 +428,242 @@ export function UploadBulletinPage() {
  ) ?? 0;
 
  return (
- <Layout title="Importer un bulletin météo">
-  <div className="max-w-7xl mx-auto space-y-8">
-  <div className="flex flex-col gap-2">
-   <h1 className="text-ink text-4xl font-black leading-tight tracking-[-0.033em]">
-   Importer un bulletin météo
-   </h1>
-   <p className="text-cloudy-600 dark:text-cloudy-300 text-base leading-normal">
-   Glissez-déposez un fichier PDF ici ou cliquez pour sélectionner.
-   </p>
-  </div>
+   <Layout title="Importer un bulletin météo">
+     <div className="max-w-7xl mx-auto space-y-8">
+       <div className="flex flex-col gap-2">
+         <h1 className="text-ink text-4xl font-black leading-tight tracking-[-0.033em]">
+           Importer un bulletin météo
+         </h1>
+         <p className="text-cloudy-600 dark:text-cloudy-300 text-base leading-normal">
+           Glissez-déposez un fichier PDF ici ou cliquez pour sélectionner.
+         </p>
+       </div>
 
-  <div className="space-y-6">
-   <div
-   className={`flex flex-col items-center gap-6 rounded-xl border-2 border-dashed px-6 py-14 bg-[var(--surface)] transition-all ${
-    selectedFile
-    ? "border-primary bg-cloudy-50 dark:bg-cloudy-900/20"
-    : "border-cloudy-300 dark:border-cloudy-600 hover:border-primary"
-   }`}
-   onDrop={handleDrop}
-   onDragOver={handleDragOver}
-   >
-   <span className="material-symbols-outlined text-primary text-5xl">cloud_upload</span>
-   <div className="flex max-w-[480px] flex-col items-center gap-2">
-    <p className="text-ink text-lg font-bold leading-tight tracking-[-0.015em] text-center">
-    {selectedFile ? `Fichier sélectionné : ${selectedFile.name}` : "Glissez-déposez un fichier PDF ici"}
-    </p>
-    <p className="text-cloudy-600 dark:text-cloudy-300 text-sm leading-normal text-center">
-    ou cliquez sur le bouton pour sélectionner un fichier depuis votre appareil.
-    </p>
-   </div>
-   <label className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-cloudy-200 dark:bg-[var(--surface-strong)] text-ink text-sm font-bold tracking-[0.015em] hover:bg-cloudy-300 dark:hover:bg-[var(--canvas-strong)] transition-colors shadow-sm">
-    <input type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
-    <span className="truncate">Sélectionner un fichier</span>
-   </label>
-   </div>
+       <div className="space-y-6">
+         <div
+           className={`flex flex-col items-center gap-6 rounded-xl border-2 border-dashed px-6 py-14 bg-[var(--surface)] transition-all ${
+             selectedFile
+               ? "border-primary bg-cloudy-50 dark:bg-cloudy-900/20"
+               : "border-cloudy-300 dark:border-cloudy-600 hover:border-primary"
+           }`}
+           onDrop={handleDrop}
+           onDragOver={handleDragOver}
+         >
+           <span className="material-symbols-outlined text-primary text-5xl">cloud_upload</span>
+           <div className="flex max-w-[480px] flex-col items-center gap-2">
+             <p className="text-ink text-lg font-bold leading-tight tracking-[-0.015em] text-center">
+               {selectedFile
+                 ? `Fichier sélectionné : ${selectedFile.name}`
+                 : "Glissez-déposez un fichier PDF ici"}
+             </p>
+             <p className="text-cloudy-600 dark:text-cloudy-300 text-sm leading-normal text-center">
+               ou cliquez sur le bouton pour sélectionner un fichier depuis votre appareil.
+             </p>
+           </div>
+           <label className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-cloudy-200 dark:bg-[var(--surface-strong)] text-ink text-sm font-bold tracking-[0.015em] hover:bg-cloudy-300 dark:hover:bg-[var(--canvas-strong)] transition-colors shadow-sm">
+             <input type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
+             <span className="truncate">Sélectionner un fichier</span>
+           </label>
+         </div>
 
-   <div className="flex justify-start">
-   <button
-    type="button"
-    onClick={handleUpload}
-    className="flex min-w-[84px] items-center justify-center rounded-lg h-12 px-5 bg-primary text-white text-base font-bold tracking-[0.015em] hover:opacity-90 transition-opacity gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-    disabled={!selectedFile || uploading}
-   >
-    <span className="material-symbols-outlined">
-    {uploading ? "hourglass_top" : "rocket_launch"}
-    </span>
-    <span className="truncate">{uploading ? "Extraction en cours..." : "Lancer l'extraction"}</span>
-   </button>
-   </div>
-  </div>
+         <div className="flex justify-start">
+           <button
+             type="button"
+             onClick={handleUpload}
+             className="flex min-w-[84px] items-center justify-center rounded-lg h-12 px-5 bg-gradient-to-br from-primary-500 to-secondary-600 text-white text-base font-bold tracking-[0.015em] hover:opacity-90 transition-opacity gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+             disabled={!selectedFile || uploading}
+           >
+             <span className="material-symbols-outlined">
+               {uploading ? "hourglass_top" : "rocket_launch"}
+             </span>
+             <span className="truncate">
+               {uploading ? "Extraction en cours..." : "Lancer l'extraction"}
+             </span>
+           </button>
+         </div>
+       </div>
 
+       <section className="space-y-4">
+         <div className="flex flex-wrap items-center justify-between gap-3">
+           <div>
+             <h2 className="text-ink text-2xl font-bold">Import en masse</h2>
+             <p className="text-sm text-cloudy-600 dark:text-cloudy-300">
+               Uploadez plusieurs PDF, un ZIP ou un dossier complet.
+             </p>
+           </div>
+           <button
+             type="button"
+             onClick={() => {
+               setBatchFiles([]);
+               setBatchId(null);
+               setBatchStatus(null);
+               setBatchError(null);
+             }}
+             className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors"
+           >
+             Reinitialiser
+           </button>
+         </div>
 
-  <section className="space-y-4">
-   <div className="flex flex-wrap items-center justify-between gap-3">
-   <div>
-    <h2 className="text-ink text-2xl font-bold">Import en masse</h2>
-    <p className="text-sm text-cloudy-600 dark:text-cloudy-300">
-    Uploadez plusieurs PDF, un ZIP ou un dossier complet.
-    </p>
-   </div>
-   <button
-    type="button"
-    onClick={() => {
-    setBatchFiles([]);
-    setBatchId(null);
-    setBatchStatus(null);
-    setBatchError(null);
-    }}
-    className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors"
-   >
-    Reinitialiser
-   </button>
-   </div>
+         <div
+           className="rounded-2xl border border-dashed border-[var(--border)] p-6 bg-[var(--surface)]/70 "
+           onDrop={handleBatchDrop}
+           onDragOver={handleDragOver}
+         >
+           <div className="grid gap-4 md:grid-cols-[2fr,1fr] items-center">
+             <div>
+               <p className="text-sm font-semibold text-ink">Glissez-deposez des PDF ou un ZIP.</p>
+               <p className="text-xs text-muted">
+                 {batchFiles.length > 0
+                   ? `${batchFiles.length} fichier(s) selectionne(s)`
+                   : "Aucun fichier selectionne"}
+               </p>
+             </div>
+             <div className="flex flex-wrap gap-2 justify-end">
+               <label className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors cursor-pointer">
+                 Fichiers
+                 <input
+                   type="file"
+                   multiple
+                   accept=".pdf,.zip"
+                   className="hidden"
+                   onChange={(e) => handleBatchFiles(e.target.files)}
+                 />
+               </label>
+               <label className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors cursor-pointer">
+                 Dossier
+                 <input
+                   type="file"
+                   // @ts-expect-error - webkitdirectory is supported in Chromium browsers
+                   webkitdirectory="true"
+                   directory=""
+                   multiple
+                   className="hidden"
+                   onChange={(e) => handleBatchFiles(e.target.files)}
+                 />
+               </label>
+               <button
+                 type="button"
+                 onClick={handleBatchUpload}
+                 disabled={batchFiles.length === 0 || batchLoading}
+                 className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 {batchLoading ? "Envoi..." : "Lancer le batch"}
+               </button>
+             </div>
+           </div>
+         </div>
 
-   <div
-   className="rounded-2xl border border-dashed border-[var(--border)] p-6 bg-[var(--surface)]/70 "
-   onDrop={handleBatchDrop}
-   onDragOver={handleDragOver}
-   >
-   <div className="grid gap-4 md:grid-cols-[2fr,1fr] items-center">
-    <div>
-    <p className="text-sm font-semibold text-ink">
-     Glissez-deposez des PDF ou un ZIP.
-    </p>
-    <p className="text-xs text-muted">
-     {batchFiles.length > 0
-     ? `${batchFiles.length} fichier(s) selectionne(s)`
-     : "Aucun fichier selectionne"}
-    </p>
-    </div>
-    <div className="flex flex-wrap gap-2 justify-end">
-    <label className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors cursor-pointer">
-     Fichiers
-     <input
-     type="file"
-     multiple
-     accept=".pdf,.zip"
-     className="hidden"
-     onChange={(e) => handleBatchFiles(e.target.files)}
-     />
-    </label>
-    <label className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] transition-colors cursor-pointer">
-     Dossier
-     <input
-     type="file"
-     // @ts-expect-error - webkitdirectory is supported in Chromium browsers
-     webkitdirectory="true"
-     directory=""
-     multiple
-     className="hidden"
-     onChange={(e) => handleBatchFiles(e.target.files)}
-     />
-    </label>
-    <button
-     type="button"
-     onClick={handleBatchUpload}
-     disabled={batchFiles.length === 0 || batchLoading}
-     className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-     {batchLoading ? "Envoi..." : "Lancer le batch"}
-    </button>
-    </div>
-   </div>
-   </div>
+         {batchError && (
+           <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-300">
+             {batchError}
+           </div>
+         )}
 
-   {batchError && (
-   <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-300">
-    {batchError}
-   </div>
-   )}
+         {batchStatus && (
+           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-4 space-y-3">
+             <div className="flex flex-wrap items-center justify-between gap-2">
+               <div>
+                 <p className="text-xs text-muted uppercase tracking-[0.3em]">Batch</p>
+                 <p className="text-sm font-semibold text-ink">{batchStatus.batch_id}</p>
+               </div>
+               <div className="text-xs font-semibold text-ink space-y-1 text-right">
+                 <div>
+                   {batchStatus.success}/{batchStatus.total} termine
+                 </div>
+                 {batchStatus.status === "running" && (
+                   <div className="text-muted">ETA {computeEta(batchStatus) ?? "--"}</div>
+                 )}
+               </div>
+             </div>
+             <div className="h-2 w-full rounded-full bg-[var(--canvas-strong)]">
+               <div
+                 className="h-2 rounded-full bg-emerald-500"
+                 style={{
+                   width: `${Math.round((batchStatus.success / Math.max(1, batchStatus.total)) * 100)}%`,
+                 }}
+               />
+             </div>
+             <div className="grid gap-2 sm:grid-cols-5 text-xs text-muted">
+               <div>En attente: {batchStatus.pending}</div>
+               <div>En cours: {batchStatus.running}</div>
+               <div>OK: {batchStatus.success}</div>
+               <div>Erreur: {batchStatus.error}</div>
+               <div>Annule: {batchStatus.canceled}</div>
+             </div>
+             {batchStatus.status === "running" && (
+               <div>
+                 <button
+                   type="button"
+                   onClick={handleStopBatch}
+                   className="rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                 >
+                   Stopper le batch
+                 </button>
+               </div>
+             )}
+             <div className="max-h-[260px] overflow-y-auto pr-2 text-xs">
+               <table className="w-full text-left">
+                 <thead className="text-muted">
+                   <tr>
+                     <th className="py-1">Fichier</th>
+                     <th className="py-1">Statut</th>
+                     <th className="py-1">Erreur</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   {batchStatus.jobs.map((job) => (
+                     <tr key={job.job_id} className="border-t border-[var(--border)]">
+                       <td className="py-1 text-ink">{job.filename ?? job.job_id}</td>
+                       <td className="py-1 text-ink">{job.status}</td>
+                       <td className="py-1 text-red-600">{job.error_message ?? "--"}</td>
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+             </div>
+           </div>
+         )}
+       </section>
 
-   {batchStatus && (
-   <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)]/70 p-4 space-y-3">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-    <div>
-     <p className="text-xs text-muted uppercase tracking-[0.3em]">Batch</p>
-     <p className="text-sm font-semibold text-ink">{batchStatus.batch_id}</p>
-    </div>
-    <div className="text-xs font-semibold text-ink space-y-1 text-right">
-     <div>
-     {batchStatus.success}/{batchStatus.total} termine
+       {result && (
+         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+             <p className="text-xs uppercase tracking-wide text-muted">Cartes détectées</p>
+             <p className="mt-1 text-2xl font-bold text-ink">{totalMaps}</p>
+           </div>
+           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+             <p className="text-xs uppercase tracking-wide text-muted">Valeurs Tmin/Tmax</p>
+             <p className="mt-1 text-2xl font-bold text-ink">{totalValues}</p>
+           </div>
+           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+             <p className="text-xs uppercase tracking-wide text-muted">Nom du fichier</p>
+             <p className="mt-1 text-sm font-medium text-ink break-all">{result.filename}</p>
+           </div>
+         </div>
+       )}
+
+       {error && (
+         <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-300">
+           {error}
+         </div>
+       )}
+
+       <div className="space-y-4">
+         <div className="flex flex-wrap justify-between items-center gap-4 pt-5">
+           <h2 className="text-ink text-[22px] font-bold leading-tight tracking-[-0.015em]">
+             Resultats de l'extraction des temperatures
+           </h2>
+           {result && (
+             <span className="text-sm text-muted">
+               Fichier traite : <span className="font-semibold">{result.filename}</span>
+             </span>
+           )}
+         </div>
+         {renderTemperatures()}
+       </div>
      </div>
-     {batchStatus.status === "running" && (
-     <div className="text-muted">ETA {computeEta(batchStatus) ?? "--"}</div>
-     )}
-    </div>
-    </div>
-    <div className="h-2 w-full rounded-full bg-[var(--canvas-strong)]">
-    <div
-     className="h-2 rounded-full bg-emerald-500"
-     style={{
-     width: `${Math.round((batchStatus.success / Math.max(1, batchStatus.total)) * 100)}%`,
-     }}
-    />
-    </div>
-    <div className="grid gap-2 sm:grid-cols-5 text-xs text-muted">
-    <div>En attente: {batchStatus.pending}</div>
-    <div>En cours: {batchStatus.running}</div>
-    <div>OK: {batchStatus.success}</div>
-    <div>Erreur: {batchStatus.error}</div>
-    <div>Annule: {batchStatus.canceled}</div>
-    </div>
-    {batchStatus.status === "running" && (
-    <div>
-     <button
-     type="button"
-     onClick={handleStopBatch}
-     className="rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
-     >
-     Stopper le batch
-     </button>
-    </div>
-    )}
-    <div className="max-h-[260px] overflow-y-auto pr-2 text-xs">
-    <table className="w-full text-left">
-     <thead className="text-muted">
-     <tr>
-      <th className="py-1">Fichier</th>
-      <th className="py-1">Statut</th>
-      <th className="py-1">Erreur</th>
-     </tr>
-     </thead>
-     <tbody>
-     {batchStatus.jobs.map((job) => (
-      <tr key={job.job_id} className="border-t border-[var(--border)]">
-      <td className="py-1 text-ink">{job.filename ?? job.job_id}</td>
-      <td className="py-1 text-ink">{job.status}</td>
-      <td className="py-1 text-red-600">
-       {job.error_message ?? "--"}
-      </td>
-      </tr>
-     ))}
-     </tbody>
-    </table>
-    </div>
-   </div>
-   )}
-  </section>
-
-  {result && (
-   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-   <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-    <p className="text-xs uppercase tracking-wide text-muted">Cartes détectées</p>
-    <p className="mt-1 text-2xl font-bold text-ink">{totalMaps}</p>
-   </div>
-   <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-    <p className="text-xs uppercase tracking-wide text-muted">Valeurs Tmin/Tmax</p>
-    <p className="mt-1 text-2xl font-bold text-ink">{totalValues}</p>
-   </div>
-   <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-    <p className="text-xs uppercase tracking-wide text-muted">Nom du fichier</p>
-    <p className="mt-1 text-sm font-medium text-ink break-all">{result.filename}</p>
-   </div>
-   </div>
-  )}
-
-  {error && (
-   <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-300">
-   {error}
-   </div>
-  )}
-
-  <div className="space-y-4">
-   <div className="flex flex-wrap justify-between items-center gap-4 pt-5">
-   <h2 className="text-ink text-[22px] font-bold leading-tight tracking-[-0.015em]">
-    Resultats de l'extraction des temperatures
-   </h2>
-   {result && (
-    <span className="text-sm text-muted">
-    Fichier traite : <span className="font-semibold">{result.filename}</span>
-    </span>
-   )}
-   </div>
-   {renderTemperatures()}
-  </div>
-  </div>
- </Layout>
+   </Layout>
  );
 }
 
