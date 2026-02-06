@@ -507,6 +507,47 @@ export async function fetchMetricsList(limit = 50) {
   return requestJson<MetricsListResponse>(`/metrics?limit=${limit}`);
 }
 
+export interface JsonMetricsFileInfo {
+  path: string;
+  name: string;
+  size_bytes: number;
+  modified_at: string;
+  date?: string | null;
+  month?: string | null;
+  year?: number | null;
+  map_type?: string | null;
+}
+
+export interface JsonMetricsFilesResponse {
+  files: JsonMetricsFileInfo[];
+  total: number;
+}
+
+export interface JsonMetricsFilePayload {
+  path: string;
+  data: {
+    date_bulletin?: string;
+    map_type?: string;
+    source_image?: string;
+    stations?: Array<{
+      nom?: string | null;
+      tmin?: number | null;
+      tmax?: number | null;
+      weather_icon?: string | null;
+    }>;
+  };
+}
+
+export async function fetchJsonMetricsFiles() {
+  return requestJson<JsonMetricsFilesResponse>(`/json-metrics/files`);
+}
+
+export async function fetchJsonMetricsFile(path: string) {
+  return requestJson<JsonMetricsFilePayload>(
+    `/json-metrics/file?path=${encodeURIComponent(path)}`,
+  );
+}
+
 export async function recalculateMetrics(force = false) {
   return postJson<{
     status: string;
@@ -812,4 +853,60 @@ export async function cancelTranslationTask(taskId: string) {
   }>(`/bulletins/translation-task/${encodeURIComponent(taskId)}`, {
     method: "DELETE",
   });
+}
+
+// Types pour les nouvelles fonctionnalités de traduction
+export type TranslationResult = {
+  language: string;
+  text: string;
+  translated_at: string;
+  source_text: string;
+};
+
+export type BulletinTranslationResponse = {
+  date: string;
+  french_text: string | null;
+  moore_translation: string | null;
+  dioula_translation: string | null;
+  extracted_at: string | null;
+  translations: TranslationResult[];
+};
+
+// Services de traduction
+export async function getBulletinTranslations(date: string): Promise<BulletinTranslationResponse> {
+  return requestJson<BulletinTranslationResponse>(`/bulletins/${encodeURIComponent(date)}/translations`);
+}
+
+export async function extractBulletinText(date: string): Promise<{ 
+  status: string; 
+  date: string; 
+  extracted_text: string; 
+  extracted_at: string 
+}> {
+  return postJson<{ 
+    status: string; 
+    date: string; 
+    extracted_text: string; 
+    extracted_at: string 
+  }>(`/bulletins/${encodeURIComponent(date)}/extract-text`, {});
+}
+
+export async function translateBulletin(
+  date: string, 
+  languages: string[] = ['moore', 'dioula']
+): Promise<{ 
+  status: string; 
+  date: string; 
+  translations: Record<string, string>;
+  rows_updated: number;
+}> {
+  const params = new URLSearchParams();
+  languages.forEach(lang => params.append('languages', lang));
+  
+  return postJson<{ 
+    status: string; 
+    date: string; 
+    translations: Record<string, string>;
+    rows_updated: number;
+  }>(`/bulletins/${encodeURIComponent(date)}/translate?${params}`, {});
 }
