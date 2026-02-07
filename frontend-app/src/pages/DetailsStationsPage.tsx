@@ -189,27 +189,33 @@ export function DetailsStationsPage() {
         if (!active) return;
         const baseByName = new Map<string, Station>();
         BASE_STATIONS.forEach((s) => baseByName.set(normalizeName(s.name), { ...s }));
-        const mergedStations = data.stations.map((s, index) => {
+        const mergedByName = new Map<string, Station>();
+        baseByName.forEach((station, key) => {
+          mergedByName.set(key, { ...station });
+        });
+        data.stations.forEach((s) => {
           const name = s.name ?? "";
           const key = normalizeName(name);
-          const base = baseByName.get(key);
-          return {
-            id: base?.id ?? index + 1,
+          const base = mergedByName.get(key);
+          const merged: Station = {
+            id: base?.id ?? mergedByName.size + 1,
             name: name || base?.name || "Station",
             lat: base?.lat ?? s.latitude ?? MAP_CENTER.lat,
             lng: base?.lng ?? s.longitude ?? MAP_CENTER.lng,
-            tmax_obs: s.tmax_obs ?? null,
-            tmin_obs: s.tmin_obs ?? null,
-            tmax_prev: s.tmax_prev ?? null,
-            tmin_prev: s.tmin_prev ?? null,
-            weather_obs: s.weather_obs ?? null,
-            weather_prev: s.weather_prev ?? null,
-            quality_score: s.quality_score ?? null,
-            interpretation_francais: s.interpretation_francais ?? null,
-            interpretation_moore: s.interpretation_moore ?? null,
-            interpretation_dioula: s.interpretation_dioula ?? null,
+            tmax_obs: s.tmax_obs ?? base?.tmax_obs ?? null,
+            tmin_obs: s.tmin_obs ?? base?.tmin_obs ?? null,
+            tmax_prev: s.tmax_prev ?? base?.tmax_prev ?? null,
+            tmin_prev: s.tmin_prev ?? base?.tmin_prev ?? null,
+            weather_obs: s.weather_obs ?? base?.weather_obs ?? null,
+            weather_prev: s.weather_prev ?? base?.weather_prev ?? null,
+            quality_score: s.quality_score ?? base?.quality_score ?? null,
+            interpretation_francais: s.interpretation_francais ?? base?.interpretation_francais ?? null,
+            interpretation_moore: s.interpretation_moore ?? base?.interpretation_moore ?? null,
+            interpretation_dioula: s.interpretation_dioula ?? base?.interpretation_dioula ?? null,
           };
+          mergedByName.set(key, merged);
         });
+        const mergedStations = Array.from(mergedByName.values());
         setBulletinInterpretations({
           francais: data.interpretation_francais ?? null,
           moore: data.interpretation_moore ?? null,

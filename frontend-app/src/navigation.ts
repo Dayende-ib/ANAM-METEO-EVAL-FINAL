@@ -13,6 +13,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Téléchargement", to: "/upload", icon: "cloud_upload" },
   // { label: "Carte", to: "/map", icon: "public" },
   { label: "Détails stations", to: "/details-stations", icon: "thermostat" },
+  { label: "Données stations", to: "/donnees-stations", icon: "table_chart" },
   { label: "Anomalies validation", to: "/validation-issues", icon: "report" },
   { label: "Paramètres", to: "/parametres", icon: "tune" },
   { label: "À propos", to: "/about", icon: "info" },

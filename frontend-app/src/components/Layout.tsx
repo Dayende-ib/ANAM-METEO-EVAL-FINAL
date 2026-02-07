@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { NAV_ITEMS, type NavItem } from "../navigation";
 import { GlobalStatusIndicator } from "./GlobalStatusIndicator";
 import { API_BASE_URL, BACKEND_DEBUG_MODE, DEBUG_MODE } from "../config";
 import { setPipelineRunning, statusStore } from "../services/statusStore";
+import { fetchAuthMe, getAuthToken } from "../services/api";
 
 const THEME_KEY = "anam-theme";
 
@@ -44,6 +45,7 @@ export function Layout({ children, title, navItems = NAV_ITEMS, fixed = false, f
  const [isPipelineRunning, setIsPipelineRunning] = useState(
   () => statusStore.getState().pipelineRunning
  );
+ const [authUser, setAuthUser] = useState<string | null>(null);
 
  useEffect(() => {
   document.documentElement.classList.toggle("dark", isDarkMode);
@@ -153,6 +155,48 @@ export function Layout({ children, title, navItems = NAV_ITEMS, fixed = false, f
   };
  }, [isPipelineRunning]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadUser = async () => {
+      const token = getAuthToken();
+      if (!token) {
+        setAuthUser(null);
+        return;
+      }
+      try {
+        const payload = await fetchAuthMe();
+        if (!cancelled) {
+          setAuthUser(payload.username);
+        }
+      } catch {
+        if (!cancelled) {
+          setAuthUser(null);
+        }
+      }
+    };
+    loadUser();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const displayName = useMemo(() => {
+    if (!authUser) return null;
+    const prefix = authUser.split("@")[0] || authUser;
+    return prefix
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }, [authUser]);
+
+  const userInitial = useMemo(() => {
+    if (!authUser) return "?";
+    const prefix = authUser.split("@")[0] || authUser;
+    const cleaned = prefix.replace(/[^a-zA-Z0-9]/g, "");
+    return cleaned ? cleaned.charAt(0).toUpperCase() : "?";
+  }, [authUser]);
+
   const mainPadding = title ? "pt-24" : "pt-6";
   const mainOverflow = fixed ? "overflow-hidden" : "overflow-y-auto";
   const mainPaddingBottom = fixed ? "pb-0" : "pb-6";
@@ -241,11 +285,11 @@ export function Layout({ children, title, navItems = NAV_ITEMS, fixed = false, f
               </button>
               <div className="hidden sm:flex items-center gap-2 pl-4 border-l border-[var(--border)]">
                 <div className="text-right">
-                  <p className="text-sm font-medium text-ink">Technicien</p>
-                  <p className="text-xs text-muted">ops@anam.local</p>
+                  <p className="text-sm font-medium text-ink">{displayName ?? "--"}</p>
+                  <p className="text-xs text-muted">{authUser ?? "Non connecte"}</p>
                 </div>
                 <div className="bg-gradient-to-br from-primary-500 to-secondary-600 rounded-full size-10 flex items-center justify-center shadow-md">
-                  <span className="material-symbols-outlined text-white text-sm">person</span>
+                  <span className="text-white text-sm font-semibold">{userInitial}</span>
                 </div>
               </div>
             </div>

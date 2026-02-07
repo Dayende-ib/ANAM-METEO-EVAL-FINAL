@@ -102,6 +102,7 @@ export function HomePage() {
     loadStats();
   }, []);
 
+
   return (
     <div className="h-screen overflow-y-auto bg-[var(--canvas)]">
       {/* ===== HEADER / NAV ===== */}

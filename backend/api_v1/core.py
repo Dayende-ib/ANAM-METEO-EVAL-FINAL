@@ -33,6 +33,7 @@ result_file: Optional[Path] = None
 AUTH_SECRET = os.getenv("AUTH_SECRET", "change-this-secret")
 AUTH_USERNAME = os.getenv("AUTH_USERNAME")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD")
+AUTH_USERS = os.getenv("AUTH_USERS")
 TOKEN_VALIDITY_SECONDS = 30 * 24 * 60 * 60  # 30 days
 
 # Pipeline/API constants
@@ -172,12 +173,39 @@ def _ensure_services_ready():
             },
         )
 
+def _get_auth_users() -> Dict[str, str]:
+    users: Dict[str, str] = {}
+    auth_users = os.getenv("AUTH_USERS") or AUTH_USERS
+    if auth_users:
+        for entry in auth_users.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if ":" not in entry:
+                continue
+            username, password = entry.split(":", 1)
+            username = username.strip()
+            password = password.strip()
+            if username and password:
+                users[username] = password
+    auth_username = os.getenv("AUTH_USERNAME") or AUTH_USERNAME
+    auth_password = os.getenv("AUTH_PASSWORD") or AUTH_PASSWORD
+    if auth_username and auth_password:
+        users.setdefault(auth_username, auth_password)
+    return users
+
 def _ensure_auth_config():
-    if not AUTH_USERNAME or not AUTH_PASSWORD:
+    has_db_users = False
+    if db_manager is not None:
+        try:
+            has_db_users = db_manager.count_auth_users() > 0
+        except Exception:
+            has_db_users = False
+    if not _get_auth_users() and not has_db_users:
         raise HTTPException(
             status_code=500,
             detail={
                 "code": ErrorCode.AUTH_CONFIG_MISSING.value,
-                "message": "AUTH_USERNAME and AUTH_PASSWORD must be set.",
+                "message": "AUTH_USERNAME/AUTH_PASSWORD or AUTH_USERS must be set.",
             },
         )

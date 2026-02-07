@@ -6,11 +6,14 @@ import { ErrorPanel, LoadingPanel } from "../components/StatusPanel";
 import bgDashboard from "../assets/bg-dashboard3.png";
 
 import {
+ fetchAuthMe,
  fetchBulletins,
  fetchBulletinByDate,
  fetchMetricsByDate,
  fetchMetricsList,
  fetchQualitySummary,
+ getAuthToken,
+ setAuthToken,
  type BulletinDetail,
  type BulletinSummary,
  type DataQualityResponse,
@@ -106,6 +109,13 @@ export function DashboardPage() {
  const [quality, setQuality] = useState<DataQualityResponse | null>(null);
  const [metricsHistory, setMetricsHistory] = useState<MetricsResponse[]>([]);
  const [loading, setLoading] = useState<boolean>(false);
+ const [isOnline, setIsOnline] = useState(() =>
+  typeof navigator !== "undefined" ? navigator.onLine : true,
+ );
+ const [authStatus, setAuthStatus] = useState<"checking" | "connected" | "disconnected">(
+  "checking",
+ );
+ const [authUser, setAuthUser] = useState<string | null>(null);
  const [datesError, setDatesError] = useState<string | null>(null);
  const [metricsError, setMetricsError] = useState<string | null>(null);
  const [trendError, setTrendError] = useState<string | null>(null);
@@ -131,6 +141,53 @@ export function DashboardPage() {
  const [bulletins, setBulletins] = useState<BulletinSummary[]>([]);
  const [selectedDate, setSelectedDate] = useState<string>("");
  const [selectedMonth, setSelectedMonth] = useState<string>("");
+
+ useEffect(() => {
+  const handleOnline = () => setIsOnline(true);
+  const handleOffline = () => setIsOnline(false);
+  window.addEventListener("online", handleOnline);
+  window.addEventListener("offline", handleOffline);
+  return () => {
+   window.removeEventListener("online", handleOnline);
+   window.removeEventListener("offline", handleOffline);
+  };
+ }, []);
+
+ useEffect(() => {
+  let cancelled = false;
+  const checkAuth = async () => {
+   if (!isOnline) {
+    setAuthStatus("disconnected");
+    setAuthUser(null);
+    return;
+   }
+   const token = getAuthToken();
+   if (!token) {
+    setAuthStatus("disconnected");
+    setAuthUser(null);
+    return;
+   }
+   setAuthStatus("checking");
+   try {
+    const payload = await fetchAuthMe();
+    if (cancelled) return;
+    setAuthStatus("connected");
+    setAuthUser(payload.username);
+   } catch (err) {
+    if (cancelled) return;
+    const status = (err as { status?: number })?.status;
+    if (status === 401 || status === 403) {
+     setAuthToken(null);
+    }
+    setAuthStatus("disconnected");
+    setAuthUser(null);
+   }
+  };
+  checkAuth();
+  return () => {
+   cancelled = true;
+  };
+ }, [isOnline]);
 
  useEffect(() => {
  const loadDates = async () => {
@@ -603,12 +660,27 @@ export function DashboardPage() {
   setMetricsError("Aucune métrique pour cette date.");
   return;
  }
- const newDate = `${selectedMonth}-${normalized}`;
- setSelectedDate(newDate);
- setMetricsError(null);
- };
+const newDate = `${selectedMonth}-${normalized}`;
+setSelectedDate(newDate);
+setMetricsError(null);
+};
 
- if (loading) {
+ const statusLabel = !isOnline
+  ? "Deconnecte"
+  : authStatus === "connected"
+   ? "Connecte"
+   : authStatus === "checking"
+    ? "Verification..."
+    : "Deconnecte";
+ const statusClass = !isOnline
+  ? "bg-amber-100 text-amber-700"
+  : authStatus === "connected"
+   ? "bg-emerald-100 text-emerald-700"
+   : authStatus === "checking"
+    ? "bg-blue-100 text-blue-700"
+    : "bg-gray-100 text-gray-700";
+
+if (loading) {
  return (
   <Layout title="Tableau de bord">
   <div className="space-y-6">
@@ -640,13 +712,32 @@ export function DashboardPage() {
            <div className="absolute -top-24 right-0 h-48 w-48 rounded-full bg-primary-400/20 blur-3xl" />
            <div className="absolute -bottom-20 left-0 h-40 w-40 rounded-full bg-sky-400/15 blur-3xl" />
            <div className="relative z-10 space-y-4">
-             <div className="flex items-center gap-3 text-xs uppercase tracking-[0.4em] text-blue-200/70">
-               <span className="inline-flex items-center gap-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 px-3 py-1">
-                 <span className="h-2 w-2 rounded-full bg-sky-400 pulse-soft" />
-                 <span className="text-white/90">Temps réel</span>
-               </span>
-               <span className="text-blue-200/70">Contrôle qualité</span>
-             </div>
+              <div className="flex items-center gap-3 text-xs uppercase tracking-[0.4em] text-blue-200/70">
+                <span className="inline-flex items-center gap-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 px-3 py-1">
+                  <span className="h-2 w-2 rounded-full bg-sky-400 pulse-soft" />
+                  <span className="text-white/90">Temps réel</span>
+                </span>
+                <span className="text-blue-200/70">Contrôle qualité</span>
+                <span
+                  className={`ml-auto inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-semibold tracking-[0.25em] ${statusClass}`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      authStatus === "connected" && isOnline
+                        ? "bg-emerald-500"
+                        : authStatus === "checking" && isOnline
+                          ? "bg-blue-500"
+                          : "bg-amber-500"
+                    }`}
+                  />
+                  {statusLabel}
+                  {authStatus === "connected" && authUser && (
+                    <span className="tracking-normal uppercase text-xs text-ink/80">
+                      {authUser}
+                    </span>
+                  )}
+                </span>
+              </div>
              <div>
                <h1 className="text-3xl font-semibold text-white font-display drop-shadow-md">
                  Tableau de bord qualité prévision

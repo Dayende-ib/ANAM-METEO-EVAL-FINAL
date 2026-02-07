@@ -96,7 +96,16 @@ export function LastBulletinStations() {
           .sort((a, b) => (a > b ? -1 : 1))[0];
         
         // Charger les détails du dernier bulletin (priorité aux prévisions)
-        const bulletinDetail = await fetchBulletinByDate(latestDate, "forecast");
+        // Fallback automatique sur "observation" si la prévision n'existe pas.
+        const bulletinDetail = await fetchBulletinByDate(latestDate, "forecast").catch(
+          async (err) => {
+            const status = (err as { status?: number })?.status;
+            if (status === 404) {
+              return await fetchBulletinByDate(latestDate);
+            }
+            throw err;
+          },
+        );
         setBulletin(bulletinDetail);
         
       } catch (err) {

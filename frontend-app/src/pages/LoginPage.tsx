@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import logoANAM from "../assets/logoANAMoriginal.png";
+import { fetchAuthMe, getAuthToken, loginAuth, setAuthToken } from "../services/api";
 
 const THEME_KEY = "anam-theme";
 
@@ -26,6 +27,7 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDarkMode);
@@ -34,13 +36,43 @@ export function LoginPage() {
     }
   }, [isDarkMode, isThemeLocked]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const checkSession = async () => {
+      const token = getAuthToken();
+      if (!token) return;
+      try {
+        await fetchAuthMe();
+        if (!cancelled) {
+          navigate("/dashboard");
+        }
+      } catch {
+        if (!cancelled) {
+          setAuthToken(null);
+        }
+      }
+    };
+    checkSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate login
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setIsLoading(false);
-    navigate("/dashboard");
+    setErrorMessage(null);
+
+    try {
+      const response = await loginAuth(email.trim(), password);
+      setAuthToken(response.access_token, rememberMe);
+      navigate("/dashboard");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Connexion impossible.";
+      setErrorMessage(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -229,18 +261,24 @@ export function LoginPage() {
                         Se souvenir de moi
                       </span>
                     </label>
-                    <button
-                      type="button"
-                      className="text-sm text-primary-500 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors"
-                    >
-                      Mot de passe oublie ?
-                    </button>
-                  </div>
-
-                  {/* Submit button */}
                   <button
-                    type="submit"
-                    disabled={isLoading}
+                    type="button"
+                    className="text-sm text-primary-500 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors"
+                  >
+                    Mot de passe oublie ?
+                  </button>
+                </div>
+
+                {errorMessage && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {errorMessage}
+                  </div>
+                )}
+
+                {/* Submit button */}
+                <button
+                  type="submit"
+                  disabled={isLoading}
                     className="relative w-full py-3.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold shadow-lg shadow-primary-500/25 hover:shadow-primary-500/40 hover:from-primary-600 hover:to-primary-700 disabled:opacity-70 disabled:cursor-not-allowed transition-all duration-200 overflow-hidden group"
                   >
                     {isLoading ? (

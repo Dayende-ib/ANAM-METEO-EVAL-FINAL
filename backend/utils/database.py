@@ -6,6 +6,8 @@ Database manager for ANAM-METEO-EVAL system
 """
 
 import hashlib
+import hmac
+import secrets
 import json
 import sqlite3
 import threading
@@ -74,6 +76,18 @@ class DatabaseManager:
                 interpretation_dioula TEXT,
                 FOREIGN KEY(bulletin_id) REFERENCES bulletins(id),
                 FOREIGN KEY(station_id) REFERENCES stations(id)
+            )
+        ''')
+
+        # Create authenticated users table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS auth_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
@@ -241,6 +255,25 @@ class DatabaseManager:
         )
         cursor.execute(
             '''
+            CREATE TABLE IF NOT EXISTS station_data_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                weather_data_id INTEGER,
+                bulletin_id INTEGER,
+                station_id INTEGER,
+                field TEXT NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                updated_by TEXT,
+                reason TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(weather_data_id) REFERENCES weather_data(id),
+                FOREIGN KEY(bulletin_id) REFERENCES bulletins(id),
+                FOREIGN KEY(station_id) REFERENCES stations(id)
+            )
+            '''
+        )
+        cursor.execute(
+            '''
             CREATE TABLE IF NOT EXISTS interpretation_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 source_hash TEXT NOT NULL UNIQUE,
@@ -311,6 +344,9 @@ class DatabaseManager:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_pdf ON station_snapshots(pdf_path)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_station ON station_snapshots(station_name)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_issues_status ON data_issues(status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_station_history_bulletin ON station_data_history(bulletin_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_station_history_station ON station_data_history(station_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_station_history_updated ON station_data_history(updated_at)")
         
         conn.commit()
     
@@ -1419,7 +1455,701 @@ class DatabaseManager:
                 )
                 updated += 1
         conn.commit()
+
+    @staticmethod
+    def _hash_password(password: str, salt: Optional[str] = None) -> str:
+        if salt is None:
+            salt = secrets.token_hex(16)
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt.encode("utf-8"),
+            120000,
+        )
+        return f"pbkdf2_sha256${salt}${digest.hex()}"
+
+    @staticmethod
+    def _verify_password(password: str, stored_hash: str) -> bool:
+        if not stored_hash:
+            return False
+        if stored_hash.startswith("pbkdf2_sha256$"):
+            try:
+                _, salt, expected = stored_hash.split("$", 2)
+            except ValueError:
+                return False
+            digest = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode("utf-8"),
+                salt.encode("utf-8"),
+                120000,
+            )
+            return hmac.compare_digest(digest.hex(), expected)
+        return hmac.compare_digest(password, stored_hash)
+
+    def count_auth_users(self) -> int:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(1) FROM auth_users")
+        row = cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    def get_auth_user_by_email(self, email: str) -> Optional[Dict]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT id, name, email, password_hash, created_at, updated_at
+            FROM auth_users
+            WHERE email = ?
+            ''',
+            (email,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "name": row[1],
+            "email": row[2],
+            "password_hash": row[3],
+            "created_at": row[4],
+            "updated_at": row[5],
+        }
+
+    def upsert_auth_user(self, name: str, email: str, password: str) -> None:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        password_hash = self._hash_password(password)
+        cursor.execute(
+            '''
+            INSERT INTO auth_users (name, email, password_hash)
+            VALUES (?, ?, ?)
+            ON CONFLICT(email) DO UPDATE SET
+                name = excluded.name,
+                password_hash = excluded.password_hash,
+                updated_at = CURRENT_TIMESTAMP
+            ''',
+            (name, email, password_hash),
+        )
+        conn.commit()
+
+    def seed_auth_users_from_env(
+        self,
+        auth_users: Optional[str],
+        auth_username: Optional[str],
+        auth_password: Optional[str],
+    ) -> int:
+        """Seed auth users from environment variables."""
+        seeded = 0
+        entries: List[tuple] = []
+        if auth_users:
+            for entry in auth_users.split(","):
+                entry = entry.strip()
+                if not entry or ":" not in entry:
+                    continue
+                email, password = entry.split(":", 1)
+                email = email.strip()
+                password = password.strip()
+                if not email or not password:
+                    continue
+                name = email.split("@")[0] or email
+                entries.append((name, email, password))
+        if auth_username and auth_password:
+            username = auth_username.strip()
+            password = auth_password.strip()
+            if username and password:
+                email = username if "@" in username else f"{username}@local"
+                name = username
+                entries.append((name, email, password))
+        if not entries:
+            return 0
+        for name, email, password in entries:
+            self.upsert_auth_user(name, email, password)
+            seeded += 1
+        return seeded
         return updated
+
+    def list_station_data(
+        self,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        station_name: Optional[str] = None,
+        map_type: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> List[Dict]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        conditions = []
+        params: List = []
+        if year:
+            conditions.append("substr(b.date, 1, 4) = ?")
+            params.append(str(year).zfill(4))
+        if month:
+            conditions.append("substr(b.date, 6, 2) = ?")
+            params.append(str(month).zfill(2))
+        if station_name:
+            conditions.append("s.name = ?")
+            params.append(station_name)
+        if map_type:
+            conditions.append("b.type = ?")
+            params.append(map_type)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = f'''
+            SELECT wd.id,
+                   b.id,
+                   b.date,
+                   b.type,
+                   b.file_path,
+                   s.id,
+                   s.name,
+                   s.latitude,
+                   s.longitude,
+                   wd.tmin,
+                   wd.tmax,
+                   wd.tmin_raw,
+                   wd.tmax_raw,
+                   wd.weather_condition,
+                   b.processed_at
+            FROM weather_data wd
+            JOIN bulletins b ON b.id = wd.bulletin_id
+            JOIN stations s ON s.id = wd.station_id
+            {where_clause}
+            ORDER BY b.date DESC, b.type ASC, s.name ASC
+            LIMIT ? OFFSET ?
+        '''
+        params.extend([limit, offset])
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            results.append(
+                {
+                    "id": row[0],
+                    "bulletin_id": row[1],
+                    "date": row[2],
+                    "map_type": row[3],
+                    "pdf_path": row[4],
+                    "station_id": row[5],
+                    "station_name": row[6],
+                    "latitude": row[7],
+                    "longitude": row[8],
+                    "tmin": row[9],
+                    "tmax": row[10],
+                    "tmin_raw": row[11],
+                    "tmax_raw": row[12],
+                    "weather_condition": row[13],
+                    "processed_at": row[14],
+                }
+            )
+        return results
+
+    def count_station_data(
+        self,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        station_name: Optional[str] = None,
+        map_type: Optional[str] = None,
+    ) -> int:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        conditions = []
+        params: List = []
+        if year:
+            conditions.append("substr(b.date, 1, 4) = ?")
+            params.append(str(year).zfill(4))
+        if month:
+            conditions.append("substr(b.date, 6, 2) = ?")
+            params.append(str(month).zfill(2))
+        if station_name:
+            conditions.append("s.name = ?")
+            params.append(station_name)
+        if map_type:
+            conditions.append("b.type = ?")
+            params.append(map_type)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = f'''
+            SELECT COUNT(1)
+            FROM weather_data wd
+            JOIN bulletins b ON b.id = wd.bulletin_id
+            JOIN stations s ON s.id = wd.station_id
+            {where_clause}
+        '''
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    def iter_station_data_rows(
+        self,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        station_name: Optional[str] = None,
+        map_type: Optional[str] = None,
+        batch_size: int = 1000,
+    ):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        conditions = []
+        params: List = []
+        if year:
+            conditions.append("substr(b.date, 1, 4) = ?")
+            params.append(str(year).zfill(4))
+        if month:
+            conditions.append("substr(b.date, 6, 2) = ?")
+            params.append(str(month).zfill(2))
+        if station_name:
+            conditions.append("s.name = ?")
+            params.append(station_name)
+        if map_type:
+            conditions.append("b.type = ?")
+            params.append(map_type)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = f'''
+            SELECT b.date,
+                   b.type,
+                   s.name,
+                   wd.tmin,
+                   wd.tmax,
+                   wd.weather_condition,
+                   s.latitude,
+                   s.longitude
+            FROM weather_data wd
+            JOIN bulletins b ON b.id = wd.bulletin_id
+            JOIN stations s ON s.id = wd.station_id
+            {where_clause}
+            ORDER BY b.date DESC, b.type ASC, s.name ASC
+        '''
+        cursor.execute(query, params)
+        while True:
+            rows = cursor.fetchmany(batch_size)
+            if not rows:
+                break
+            for row in rows:
+                yield row
+
+    def list_station_data_filters(self) -> Dict[str, List]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT DISTINCT substr(b.date, 1, 4) as year
+            FROM bulletins b
+            JOIN weather_data wd ON wd.bulletin_id = b.id
+            ORDER BY year DESC
+            '''
+        )
+        years = [int(row[0]) for row in cursor.fetchall() if row and row[0]]
+        cursor.execute(
+            '''
+            SELECT DISTINCT substr(b.date, 6, 2) as month
+            FROM bulletins b
+            JOIN weather_data wd ON wd.bulletin_id = b.id
+            ORDER BY month ASC
+            '''
+        )
+        months = [int(row[0]) for row in cursor.fetchall() if row and row[0]]
+        cursor.execute(
+            '''
+            SELECT DISTINCT s.name
+            FROM stations s
+            JOIN weather_data wd ON wd.station_id = s.id
+            ORDER BY s.name ASC
+            '''
+        )
+        stations = [row[0] for row in cursor.fetchall() if row and row[0]]
+        return {"years": years, "months": months, "stations": stations}
+
+    def get_station_data_row(self, weather_id: int) -> Optional[Dict]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT wd.id,
+                   wd.tmin,
+                   wd.tmax,
+                   wd.tmin_raw,
+                   wd.tmax_raw,
+                   wd.weather_condition,
+                   b.id,
+                   b.date,
+                   b.type,
+                   b.file_path,
+                   s.id,
+                   s.name
+            FROM weather_data wd
+            JOIN bulletins b ON b.id = wd.bulletin_id
+            JOIN stations s ON s.id = wd.station_id
+            WHERE wd.id = ?
+            ''',
+            (weather_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "tmin": row[1],
+            "tmax": row[2],
+            "tmin_raw": row[3],
+            "tmax_raw": row[4],
+            "weather_condition": row[5],
+            "bulletin_id": row[6],
+            "date": row[7],
+            "map_type": row[8],
+            "pdf_path": row[9],
+            "station_id": row[10],
+            "station_name": row[11],
+        }
+
+    def _update_station_snapshot_for_pdf(
+        self,
+        pdf_path: str,
+        station_name: str,
+        map_type: str,
+        tmin: Optional[float],
+        tmax: Optional[float],
+        tmin_raw: Optional[str],
+        tmax_raw: Optional[str],
+        weather_condition: Optional[str],
+    ) -> int:
+        if not pdf_path or not station_name:
+            return 0
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT observation_json, prevision_json
+            FROM station_snapshots
+            WHERE lower(pdf_path) = lower(?) AND station_name = ?
+            ''',
+            (pdf_path, station_name),
+        )
+        row = cursor.fetchone()
+        observation_json = row[0] if row else None
+        prevision_json = row[1] if row else None
+
+        def _update_measurement(raw_json: Optional[str]) -> Optional[str]:
+            if not raw_json:
+                return raw_json
+            try:
+                payload = json.loads(raw_json)
+            except Exception:
+                return raw_json
+            if not isinstance(payload, dict):
+                return raw_json
+            payload["tmin"] = tmin
+            payload["tmax"] = tmax
+            payload["tmin_raw"] = tmin_raw
+            payload["tmax_raw"] = tmax_raw
+            payload["weather_condition"] = weather_condition
+            return json.dumps(payload, ensure_ascii=False)
+
+        if map_type == "observation":
+            observation_json = _update_measurement(observation_json)
+        else:
+            prevision_json = _update_measurement(prevision_json)
+
+        cursor.execute(
+            '''
+            UPDATE station_snapshots
+            SET tmin = ?, tmax = ?, tmin_raw = ?, tmax_raw = ?, weather_condition = ?,
+                quality_score = 1.0,
+                observation_json = ?,
+                prevision_json = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE lower(pdf_path) = lower(?) AND station_name = ?
+            ''',
+            (
+                tmin,
+                tmax,
+                tmin_raw,
+                tmax_raw,
+                weather_condition,
+                observation_json,
+                prevision_json,
+                pdf_path,
+                station_name,
+            ),
+        )
+        conn.commit()
+        return cursor.rowcount
+
+    def _update_bulletin_payload_for_pdf(
+        self,
+        pdf_path: str,
+        station_name: str,
+        map_type: str,
+        tmin: Optional[float],
+        tmax: Optional[float],
+        tmin_raw: Optional[str],
+        tmax_raw: Optional[str],
+        weather_condition: Optional[str],
+    ) -> int:
+        if not pdf_path or not station_name:
+            return 0
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT payload_json
+            FROM bulletin_payloads
+            WHERE lower(pdf_path) = lower(?)
+            ''',
+            (pdf_path,),
+        )
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            return 0
+        try:
+            payload = json.loads(row[0])
+        except Exception:
+            return 0
+        if not isinstance(payload, dict):
+            return 0
+        stations = payload.get("stations", [])
+        changed = False
+        target_key = "prevision" if map_type == "forecast" else "observation"
+        for station in stations:
+            if station.get("name") != station_name:
+                continue
+            target = station.get(target_key) or {}
+            target["tmin"] = tmin
+            target["tmax"] = tmax
+            target["tmin_raw"] = tmin_raw
+            target["tmax_raw"] = tmax_raw
+            target["weather_condition"] = weather_condition
+            station[target_key] = target
+            if map_type == "forecast" and station.get("type") in {"forecast", "prevision"}:
+                station["tmin"] = tmin
+                station["tmax"] = tmax
+                station["tmin_raw"] = tmin_raw
+                station["tmax_raw"] = tmax_raw
+                station["weather_condition"] = weather_condition
+            if map_type == "observation" and station.get("type") == "observation":
+                station["tmin"] = tmin
+                station["tmax"] = tmax
+                station["tmin_raw"] = tmin_raw
+                station["tmax_raw"] = tmax_raw
+                station["weather_condition"] = weather_condition
+            station["quality_score"] = 1.0
+            changed = True
+        if changed:
+            payload_json = json.dumps(payload, ensure_ascii=False)
+            cursor.execute(
+                '''
+                UPDATE bulletin_payloads
+                SET payload_json = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE lower(pdf_path) = lower(?)
+                ''',
+                (payload_json, pdf_path),
+            )
+            conn.commit()
+            return cursor.rowcount
+        return 0
+
+    def update_station_data_row(
+        self,
+        weather_id: int,
+        updates: Dict[str, Optional[object]],
+        updated_by: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> Optional[Dict]:
+        current = self.get_station_data_row(weather_id)
+        if not current:
+            return None
+
+        changes = []
+        for field in ("tmin", "tmax", "tmin_raw", "tmax_raw", "weather_condition"):
+            if field not in updates:
+                continue
+            new_value = updates.get(field)
+            if isinstance(new_value, str):
+                cleaned = new_value.strip()
+                new_value = cleaned if cleaned else None
+            old_value = current.get(field)
+            if new_value != old_value:
+                changes.append({"field": field, "old_value": old_value, "new_value": new_value})
+                current[field] = new_value
+
+        if not changes:
+            return {"updated": False, "row": current, "changes": []}
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            UPDATE weather_data
+            SET tmin = ?, tmax = ?, tmin_raw = ?, tmax_raw = ?, weather_condition = ?
+            WHERE id = ?
+            ''',
+            (
+                current.get("tmin"),
+                current.get("tmax"),
+                current.get("tmin_raw"),
+                current.get("tmax_raw"),
+                current.get("weather_condition"),
+                weather_id,
+            ),
+        )
+
+        self._update_station_snapshot_for_pdf(
+            current.get("pdf_path"),
+            current.get("station_name"),
+            current.get("map_type") or "observation",
+            current.get("tmin"),
+            current.get("tmax"),
+            current.get("tmin_raw"),
+            current.get("tmax_raw"),
+            current.get("weather_condition"),
+        )
+        self._update_bulletin_payload_for_pdf(
+            current.get("pdf_path"),
+            current.get("station_name"),
+            current.get("map_type") or "observation",
+            current.get("tmin"),
+            current.get("tmax"),
+            current.get("tmin_raw"),
+            current.get("tmax_raw"),
+            current.get("weather_condition"),
+        )
+
+        for change in changes:
+            cursor.execute(
+                '''
+                INSERT INTO station_data_history (
+                    weather_data_id,
+                    bulletin_id,
+                    station_id,
+                    field,
+                    old_value,
+                    new_value,
+                    updated_by,
+                    reason
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    weather_id,
+                    current.get("bulletin_id"),
+                    current.get("station_id"),
+                    change["field"],
+                    json.dumps(change["old_value"], ensure_ascii=False)
+                    if change["old_value"] is not None
+                    else None,
+                    json.dumps(change["new_value"], ensure_ascii=False)
+                    if change["new_value"] is not None
+                    else None,
+                    updated_by,
+                    reason,
+                ),
+            )
+
+        conn.commit()
+        current["updated"] = True
+        current["changes"] = changes
+        return current
+
+    def list_station_data_history(
+        self,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        station_name: Optional[str] = None,
+        map_type: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        conditions = []
+        params: List = []
+        if year:
+            conditions.append("substr(b.date, 1, 4) = ?")
+            params.append(str(year).zfill(4))
+        if month:
+            conditions.append("substr(b.date, 6, 2) = ?")
+            params.append(str(month).zfill(2))
+        if station_name:
+            conditions.append("s.name = ?")
+            params.append(station_name)
+        if map_type:
+            conditions.append("b.type = ?")
+            params.append(map_type)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = f'''
+            SELECT h.id,
+                   h.weather_data_id,
+                   h.field,
+                   h.old_value,
+                   h.new_value,
+                   h.updated_by,
+                   h.reason,
+                   h.updated_at,
+                   b.date,
+                   b.type,
+                   s.name
+            FROM station_data_history h
+            LEFT JOIN bulletins b ON b.id = h.bulletin_id
+            LEFT JOIN stations s ON s.id = h.station_id
+            {where_clause}
+            ORDER BY h.updated_at DESC
+            LIMIT ? OFFSET ?
+        '''
+        params.extend([limit, offset])
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            results.append(
+                {
+                    "id": row[0],
+                    "weather_data_id": row[1],
+                    "field": row[2],
+                    "old_value": row[3],
+                    "new_value": row[4],
+                    "updated_by": row[5],
+                    "reason": row[6],
+                    "updated_at": row[7],
+                    "date": row[8],
+                    "map_type": row[9],
+                    "station_name": row[10],
+                }
+            )
+        return results
+
+    def count_station_data_history(
+        self,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        station_name: Optional[str] = None,
+        map_type: Optional[str] = None,
+    ) -> int:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        conditions = []
+        params: List = []
+        if year:
+            conditions.append("substr(b.date, 1, 4) = ?")
+            params.append(str(year).zfill(4))
+        if month:
+            conditions.append("substr(b.date, 6, 2) = ?")
+            params.append(str(month).zfill(2))
+        if station_name:
+            conditions.append("s.name = ?")
+            params.append(station_name)
+        if map_type:
+            conditions.append("b.type = ?")
+            params.append(map_type)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = f'''
+            SELECT COUNT(1)
+            FROM station_data_history h
+            LEFT JOIN bulletins b ON b.id = h.bulletin_id
+            LEFT JOIN stations s ON s.id = h.station_id
+            {where_clause}
+        '''
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        return int(row[0]) if row else 0
 
 
     def count_data_issues(

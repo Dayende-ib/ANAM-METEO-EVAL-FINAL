@@ -218,8 +218,10 @@ export function ExplorationBulletinsPage() {
         return;
       }
       
-      // ✨ CHARGEMENT DES PRÉVISIONS : Toujours demander le type "forecast"
-      const detail = await fetchBulletinByDate(bulletin.date, "forecast");
+      // Charger le bulletin selon son type (observation / prévision)
+      const requestedType =
+        bulletin.type === "forecast" || bulletin.type === "observation" ? bulletin.type : undefined;
+      const detail = await fetchBulletinByDate(bulletin.date, requestedType);
       const updated: BulletinExtended = {
         ...bulletin,
         stations: detail.stations,
@@ -240,7 +242,13 @@ export function ExplorationBulletinsPage() {
     } catch (err) {
       const status = (err as { status?: number })?.status;
       if (status === 404) {
-        setDetailError("Aucun bulletin disponible pour cette date.");
+        const typeLabel =
+          bulletin.type === "forecast"
+            ? "prévision"
+            : bulletin.type === "observation"
+              ? "observation"
+              : "sélectionné";
+        setDetailError(`Aucun bulletin ${typeLabel} disponible pour cette date.`);
       } else {
         console.error("Échec du chargement du détail du bulletin:", err);
         setDetailError("Échec du chargement du détail du bulletin.");
