@@ -165,6 +165,33 @@ class MeResponse(BaseModel):
     expires_at: int
 
 
+class AuthUserCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    email: str = Field(..., min_length=3)
+    password: str = Field(..., min_length=1)
+
+
+class AuthUserUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+
+
+class AuthUserItem(BaseModel):
+    id: int
+    name: str
+    email: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class AuthUsersPage(BaseModel):
+    items: List[AuthUserItem]
+    total: int
+    limit: int
+    offset: int
+
+
 class PipelineTriggerRequest(BaseModel):
     use_scraping: bool = True
     use_pagination: bool = True

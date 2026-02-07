@@ -31,6 +31,7 @@ backend/data/*
 backend/models/*
 models/*
 backend/scripts/
+Backend/
 
 # React / Node.js
 node_modules/
@@ -89,7 +90,5 @@ bulletins_meteo
 .qoderignore
 .vite
 
-SOLUTION_API_NON_BLOQUANTE.md
-frontend-app/BULLETINS_UNIFIED_PAGE.md
 frontend-app/package-lock.json
 json/

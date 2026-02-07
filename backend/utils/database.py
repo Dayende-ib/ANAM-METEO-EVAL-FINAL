@@ -1564,10 +1564,115 @@ class DatabaseManager:
         if not entries:
             return 0
         for name, email, password in entries:
+            if self.get_auth_user_by_email(email):
+                continue
             self.upsert_auth_user(name, email, password)
             seeded += 1
         return seeded
-        return updated
+
+    def list_auth_users(self, limit: int = 50, offset: int = 0) -> List[Dict]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT id, name, email, created_at, updated_at
+            FROM auth_users
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            ''',
+            (limit, offset),
+        )
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            results.append(
+                {
+                    "id": row[0],
+                    "name": row[1],
+                    "email": row[2],
+                    "created_at": row[3],
+                    "updated_at": row[4],
+                }
+            )
+        return results
+
+    def create_auth_user(self, name: str, email: str, password: str) -> Dict:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        password_hash = self._hash_password(password)
+        cursor.execute(
+            '''
+            INSERT INTO auth_users (name, email, password_hash)
+            VALUES (?, ?, ?)
+            ''',
+            (name, email, password_hash),
+        )
+        conn.commit()
+        return self.get_auth_user_by_email(email) or {"name": name, "email": email}
+
+    def get_auth_user_by_id(self, user_id: int) -> Optional[Dict]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT id, name, email, password_hash, created_at, updated_at
+            FROM auth_users
+            WHERE id = ?
+            ''',
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "name": row[1],
+            "email": row[2],
+            "password_hash": row[3],
+            "created_at": row[4],
+            "updated_at": row[5],
+        }
+
+    def update_auth_user(
+        self,
+        user_id: int,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> Optional[Dict]:
+        current = self.get_auth_user_by_id(user_id)
+        if not current:
+            return None
+        fields = []
+        params: List = []
+        if name is not None:
+            fields.append("name = ?")
+            params.append(name)
+        if email is not None:
+            fields.append("email = ?")
+            params.append(email)
+        if password is not None:
+            fields.append("password_hash = ?")
+            params.append(self._hash_password(password))
+        if not fields:
+            return current
+        fields.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(user_id)
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE auth_users SET {', '.join(fields)} WHERE id = ?",
+            params,
+        )
+        conn.commit()
+        return self.get_auth_user_by_id(user_id)
+
+    def delete_auth_user(self, user_id: int) -> bool:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM auth_users WHERE id = ?", (user_id,))
+        conn.commit()
+        return cursor.rowcount > 0
 
     def list_station_data(
         self,
