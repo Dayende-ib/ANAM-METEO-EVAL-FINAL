@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchBulletins, type BulletinSummary } from "../services/api";
+import { LastBulletinStations } from "../components/LastBulletinStations";
 import logoANAM from "../assets/logoANAMoriginal.png";
 
 const THEME_KEY = "anam-theme";
@@ -187,64 +188,12 @@ export function HomePage() {
               </div>
             </div>
 
-            {/* Right - Stats Preview */}
+            {/* Right - Last Bulletin Stations */}
             <div
               className="mt-12 lg:mt-0 lg:w-[380px] flex-shrink-0 animate-rise"
               style={{ animationDelay: "150ms" }}
             >
-              <div className="rounded-3xl bg-gradient-to-br from-primary-900 via-primary-800 to-secondary-700 p-6 shadow-2xl shadow-primary-900/30 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-40 h-40 bg-primary-400/15 rounded-full blur-2xl translate-x-10 -translate-y-10" />
-                <div className="absolute bottom-0 left-0 w-32 h-32 bg-sky-400/10 rounded-full blur-2xl -translate-x-8 translate-y-8" />
-
-                <div className="relative z-10 space-y-5">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center rounded-xl bg-white/10 size-10">
-                      <span className="material-symbols-outlined text-sky-300 text-xl">
-                        insights
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-white">Aperçu système</p>
-                      <p className="text-xs text-blue-200/60">Données en temps réel</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl bg-white/10 backdrop-blur-sm border border-white/[0.08] p-4">
-                      <p className="text-xs text-blue-200/60 uppercase tracking-wider mb-1">
-                        Bulletins
-                      </p>
-                      <p className="text-3xl font-bold font-mono text-white">{bulletinCount}</p>
-                    </div>
-                    <div className="rounded-2xl bg-white/10 backdrop-blur-sm border border-white/[0.08] p-4">
-                      <p className="text-xs text-blue-200/60 uppercase tracking-wider mb-1">
-                        Dates
-                      </p>
-                      <p className="text-3xl font-bold font-mono text-white">{dateCount}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {[
-                      { label: "Précision de l'extraction", value: 94 },
-                      { label: "Couverture stations", value: 78 },
-                    ].map((stat) => (
-                      <div key={stat.label}>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="text-blue-100/70">{stat.label}</span>
-                          <span className="font-mono text-white font-semibold">{stat.value}%</span>
-                        </div>
-                        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-sky-400 to-primary-400 transition-all duration-1000"
-                            style={{ width: `${stat.value}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              <LastBulletinStations />
             </div>
           </div>
         </div>

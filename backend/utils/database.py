@@ -619,11 +619,11 @@ class DatabaseManager:
         row = cursor.fetchone()
         return row[0] if row else None
     
-    def get_observation_forecast_pairs(self, observation_date, forecast_date):
+    def get_observation_forecast_pairs(self, observation_date, forecast_date, station_id: Optional[int] = None):
         """Get observation and forecast pairs for evaluation."""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute('''
+        query = '''
             SELECT 
                 s.name,
                 obs.tmin as tmin_obs,
@@ -640,7 +640,12 @@ class DatabaseManager:
             WHERE b_obs.date = ? AND b_obs.type = 'observation'
             AND b_fore.date = ? AND b_fore.type = 'forecast'
             AND obs.station_id = fore.station_id
-        ''', (observation_date, forecast_date))
+        '''
+        params = [observation_date, forecast_date]
+        if station_id is not None:
+            query += " AND s.id = ?"
+            params.append(station_id)
+        cursor.execute(query, params)
         
         return cursor.fetchall()
     
@@ -833,6 +838,141 @@ class DatabaseManager:
             """
         )
         return [row[0] for row in cursor.fetchall()]
+
+    def list_bulletin_file_paths(self) -> List[str]:
+        """Return distinct file paths referenced by bulletins."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT DISTINCT file_path
+            FROM bulletins
+            WHERE file_path IS NOT NULL AND file_path != ''
+            """
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+    def list_bulletins_by_file_path(self, file_path: str) -> List[Dict]:
+        """Return bulletins (id/date/type) for a given file path."""
+        if not file_path:
+            return []
+        raw_value = str(file_path)
+        normalized = self._normalize_path(raw_value)
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, date, type, file_path
+            FROM bulletins
+            WHERE lower(file_path) = ?
+               OR lower(file_path) = ?
+            """,
+            (raw_value.lower(), normalized),
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            basename = Path(raw_value).name.lower()
+            if basename:
+                cursor.execute(
+                    """
+                    SELECT id, date, type, file_path
+                    FROM bulletins
+                    WHERE lower(file_path) LIKE ?
+                    """,
+                    (f"%{basename}",),
+                )
+                rows = cursor.fetchall()
+        seen = set()
+        results = []
+        for row in rows:
+            if row[0] in seen:
+                continue
+            seen.add(row[0])
+            results.append(
+                {"id": row[0], "date": row[1], "type": row[2], "file_path": row[3]}
+            )
+        return results
+
+    def get_bulletin_payload_by_path(self, pdf_path: str) -> Optional[Dict]:
+        """Return a stored payload for a PDF path, if any."""
+        if not pdf_path:
+            return None
+        raw_value = str(pdf_path)
+        normalized = self._normalize_path(raw_value)
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT payload_json
+            FROM bulletin_payloads
+            WHERE lower(pdf_path) = ?
+               OR lower(pdf_path) = ?
+            LIMIT 1
+            """,
+            (raw_value.lower(), normalized),
+        )
+        row = cursor.fetchone()
+        if not row:
+            basename = Path(raw_value).name.lower()
+            if basename:
+                cursor.execute(
+                    """
+                    SELECT payload_json
+                    FROM bulletin_payloads
+                    WHERE lower(pdf_path) LIKE ?
+                    LIMIT 1
+                    """,
+                    (f"%{basename}",),
+                )
+                row = cursor.fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            payload = json.loads(row[0])
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def upsert_weather_data(
+        self,
+        bulletin_id: int,
+        station_id: int,
+        tmin: Optional[float],
+        tmax: Optional[float],
+        weather_condition: Optional[str],
+        tmin_raw: Optional[str] = None,
+        tmax_raw: Optional[str] = None,
+    ) -> None:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id
+            FROM weather_data
+            WHERE bulletin_id = ? AND station_id = ?
+            LIMIT 1
+            """,
+            (bulletin_id, station_id),
+        )
+        row = cursor.fetchone()
+        if row:
+            cursor.execute(
+                """
+                UPDATE weather_data
+                SET tmin = ?, tmax = ?, tmin_raw = ?, tmax_raw = ?, weather_condition = ?
+                WHERE id = ?
+                """,
+                (tmin, tmax, tmin_raw, tmax_raw, weather_condition, row[0]),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO weather_data (bulletin_id, station_id, tmin, tmax, tmin_raw, tmax_raw, weather_condition)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (bulletin_id, station_id, tmin, tmax, tmin_raw, tmax_raw, weather_condition),
+            )
+        conn.commit()
 
     def has_bulletin_for_pdf(self, file_path: str) -> bool:
         """Return True if a bulletin already exists for the given PDF."""

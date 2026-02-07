@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Layout } from "../components/Layout";
 import { ErrorPanel, LoadingPanel } from "../components/StatusPanel";
 import {
   fetchBulletinByDate,
   fetchBulletins,
   fetchMetricsByDate,
+  startBulletinsReprocess,
   regenerateBulletinTranslationAsync,
   getTranslationTaskStatus,
   type BulletinDetail,
@@ -35,7 +36,7 @@ type ViewMode = "list" | "detail";
 
 export function ExplorationBulletinsPage() {
   // Hook des tâches en arrière-plan
-  const { createBulkTranslationTask, hasActiveTasks } = useBackgroundTasks();
+  const { createBulkTranslationTask, createBulletinReprocessTask, hasActiveTasks, allTasks } = useBackgroundTasks();
   
   // États principaux
   const [bulletins, setBulletins] = useState<BulletinExtended[]>([]);
@@ -63,6 +64,19 @@ export function ExplorationBulletinsPage() {
   
   // Notifications toast
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+
+  // Rapport de rÃ©-extraction
+  const [reprocessSummary, setReprocessSummary] = useState<{
+    total: number;
+    success: number;
+    failed: number;
+    skipped: number;
+    missing: number;
+    errors: string[];
+    status: "completed" | "failed";
+    errorMessage?: string;
+  } | null>(null);
+  const notifiedReprocessRef = useRef<Set<string>>(new Set());
   
   // Afficher un toast
   const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
@@ -70,28 +84,50 @@ export function ExplorationBulletinsPage() {
     setTimeout(() => setToast(null), 5000);
   };
 
+  const refreshBulletins = useCallback(
+    async (options?: { notifyMessage?: string; setDefaultDate?: boolean }) => {
+      const payload = await fetchBulletins({ limit: 200 });
+      const items = Array.isArray(payload.bulletins) ? payload.bulletins : [];
+      const normalized = items.map((item, index) => ({
+        ...item,
+        id: `${item.date}-${item.type}-${index}`,
+      }));
+      setBulletins(normalized);
+      if (normalized.length > 0 && options?.setDefaultDate) {
+        const dates = Array.from(new Set(normalized.map((b) => b.date))).sort(
+          (a, b) => (a > b ? -1 : 1),
+        );
+        setSelectedDate((current) => current || dates[0]);
+      }
+      if (options?.notifyMessage) {
+        showToast(options.notifyMessage, "success");
+      }
+      setError(
+        normalized.length === 0
+          ? "Aucun bulletin disponible. Veuillez d'abord lancer le pipeline pour gÃ©nÃ©rer des bulletins."
+          : null,
+      );
+      return normalized;
+    },
+    [],
+  );
+
+  const hasActiveReprocess = useMemo(
+    () =>
+      allTasks.some(
+        (task) =>
+          task.type === "bulletin_reprocess" &&
+          (task.status === "pending" || task.status === "running"),
+      ),
+    [allTasks],
+  );
+
   // Chargement initial des bulletins
   useEffect(() => {
     const loadBulletins = async () => {
       try {
         setLoading(true);
-        const payload = await fetchBulletins({ limit: 200 });
-        const items = Array.isArray(payload.bulletins) ? payload.bulletins : [];
-        const normalized = items.map((item, index) => ({
-          ...item,
-          id: `${item.date}-${item.type}-${index}`,
-        }));
-        setBulletins(normalized);
-        
-        // Sélectionner la date la plus récente par défaut
-        if (normalized.length > 0) {
-          const dates = Array.from(new Set(normalized.map((b) => b.date))).sort(
-            (a, b) => (a > b ? -1 : 1),
-          );
-          setSelectedDate(dates[0]);
-        }
-        
-        setError(normalized.length === 0 ? "Aucun bulletin disponible. Veuillez d'abord lancer le pipeline pour générer des bulletins." : null);
+        await refreshBulletins({ setDefaultDate: true });
       } catch (err) {
         console.error("Échec du chargement des bulletins:", err);
         setError("Erreur lors du chargement des bulletins. Vérifiez que le backend est démarré.");
@@ -101,7 +137,7 @@ export function ExplorationBulletinsPage() {
       }
     };
     loadBulletins();
-  }, []);
+  }, [refreshBulletins]);
 
   // 🔄 Recharger les bulletins automatiquement quand une tâche se termine
   useEffect(() => {
@@ -138,6 +174,37 @@ export function ExplorationBulletinsPage() {
     });
   }, []);
 
+  // Suivre la r??-extraction des bulletins et afficher un rapport
+  useEffect(() => {
+    const completedTasks = allTasks.filter(
+      (task) =>
+        task.type === "bulletin_reprocess" &&
+        (task.status === "completed" || task.status === "failed"),
+    );
+
+    completedTasks.forEach((task) => {
+      if (notifiedReprocessRef.current.has(task.id)) {
+        return;
+      }
+      notifiedReprocessRef.current.add(task.id);
+
+      const result = task.result ?? { successCount: 0, failedCount: 0, skippedCount: 0, missingCount: 0, details: [] };
+      setReprocessSummary({
+        total: task.progress.total,
+        success: result.successCount ?? 0,
+        failed: result.failedCount ?? 0,
+        skipped: result.skippedCount ?? 0,
+        missing: result.missingCount ?? 0,
+        errors: (result.details ?? []) as string[],
+        status: task.status === "failed" ? "failed" : "completed",
+        errorMessage: task.error,
+      });
+
+      refreshBulletins({ notifyMessage: "Liste des bulletins rafraîchie après ré-extraction." });
+    });
+  }, [allTasks, refreshBulletins]);
+
+
   // Charger les détails d'un bulletin
   const loadBulletinDetails = useCallback(async (bulletin: BulletinExtended) => {
     try {
@@ -151,8 +218,8 @@ export function ExplorationBulletinsPage() {
         return;
       }
       
-      // Charger les détails
-      const detail = await fetchBulletinByDate(bulletin.date);
+      // ✨ CHARGEMENT DES PRÉVISIONS : Toujours demander le type "forecast"
+      const detail = await fetchBulletinByDate(bulletin.date, "forecast");
       const updated: BulletinExtended = {
         ...bulletin,
         stations: detail.stations,
@@ -205,7 +272,7 @@ export function ExplorationBulletinsPage() {
       setRegeneratingLanguage(language);
       showToast(`Vérification de la traduction ${language}...`, "info");
       
-      // Lancer la traduction en arrière-plan (le backend vérifie d'abord si elle existe)
+      // ✨ UTILISER LES PRÉVISIONS : Spécifier le type "forecast"
       const response = await regenerateBulletinTranslationAsync({
         date: selectedBulletin.date,
         station_name: "Bulletin National",
@@ -305,6 +372,7 @@ export function ExplorationBulletinsPage() {
     for (const bulletin of bulletinsToProcess) {
       for (const language of languagesToGen) {
         try {
+          // ✨ UTILISER LES PRÉVISIONS : Spécifier le type "forecast"
           const response = await regenerateBulletinTranslationAsync({
             date: bulletin.date,
             station_name: "Bulletin National",
@@ -346,6 +414,41 @@ export function ExplorationBulletinsPage() {
     showToast(message, "success");
     console.log(`✅ Tâche en arrière-plan créée : ${taskId}`);
   };
+
+  // Relancer la ré-extraction OCR + icônes sur tous les bulletins
+  const handleReprocessBulletins = async () => {
+    if (hasActiveReprocess) {
+      showToast("Une ré-extraction est déjà en cours.", "info");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Voulez-vous relancer l'extraction OCR, la classification et l'intégration pour tous les bulletins ?
+
+⚠️ Le traitement se fera en arrière-plan et peut prendre plusieurs minutes.
+📊 Une barre de progression restera visible même si vous changez de page.
+✅ Les bulletins manquants tenteront d'être retéléchargés si possible.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      showToast("Lancement de la ré-extraction en arrière-plan...", "info");
+      const response = await startBulletinsReprocess();
+      if (response.total === 0) {
+        showToast("Aucun PDF en base à ré-extraire.", "info");
+        return;
+      }
+      createBulletinReprocessTask(response.batch_id, response.total);
+      showToast("Ré-extraction lancée. Suivi dans la barre de tâches.", "success");
+    } catch (err) {
+      console.error("Échec du lancement de la ré-extraction:", err);
+      showToast("Erreur lors du lancement de la ré-extraction.", "error");
+    }
+  };
+
 
   // Export JSON
   const exportToJSON = (bulletin: BulletinExtended) => {
@@ -548,6 +651,82 @@ export function ExplorationBulletinsPage() {
           </div>
         )}
 
+
+        {reprocessSummary && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="surface-panel w-full max-w-lg p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-muted">Traitement terminé</p>
+                  <h3 className="text-lg font-semibold text-ink font-display">
+                    {reprocessSummary.status === "failed"
+                      ? "Ré-extraction interrompue"
+                      : "Ré-extraction terminée"}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReprocessSummary(null)}
+                  className="text-muted hover:text-ink transition-colors"
+                  aria-label="Fermer le rapport"
+                >
+                  <span className="material-symbols-outlined text-xl">close</span>
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 mt-4">
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-3">
+                  <p className="text-xs text-muted">Total</p>
+                  <p className="text-lg font-semibold text-ink font-mono">{reprocessSummary.total}</p>
+                </div>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-3">
+                  <p className="text-xs text-muted">Succès</p>
+                  <p className="text-lg font-semibold text-emerald-700 font-mono">{reprocessSummary.success}</p>
+                </div>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-3">
+                  <p className="text-xs text-muted">Échecs</p>
+                  <p className="text-lg font-semibold text-red-600 font-mono">{reprocessSummary.failed}</p>
+                </div>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-3">
+                  <p className="text-xs text-muted">Manquants</p>
+                  <p className="text-lg font-semibold text-amber-600 font-mono">{reprocessSummary.missing}</p>
+                </div>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-3">
+                  <p className="text-xs text-muted">Ignorés</p>
+                  <p className="text-lg font-semibold text-slate-600 font-mono">{reprocessSummary.skipped}</p>
+                </div>
+              </div>
+
+              {reprocessSummary.errorMessage && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                  {reprocessSummary.errorMessage}
+                </div>
+              )}
+
+              {reprocessSummary.errors.length > 0 && (
+                <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 p-3 max-h-48 overflow-y-auto">
+                  <p className="text-xs uppercase tracking-[0.3em] text-muted mb-2">Détails</p>
+                  <ul className="space-y-1 text-xs text-ink">
+                    {reprocessSummary.errors.slice(0, 20).map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setReprocessSummary(null)}
+                  className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {error && <ErrorPanel message={error} />}
 
         {/* Section des filtres et statistiques */}
@@ -648,6 +827,16 @@ export function ExplorationBulletinsPage() {
                     Générer traductions manquantes
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={handleReprocessBulletins}
+                  disabled={hasActiveReprocess}
+                  className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-ink hover:bg-[var(--canvas-strong)] disabled:text-muted disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-sm">restart_alt</span>
+                  {hasActiveReprocess ? "Ré-extraction en cours..." : "Relancer l'extraction"}
+                </button>
               </div>
             </div>
 

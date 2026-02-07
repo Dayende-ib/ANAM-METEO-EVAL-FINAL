@@ -5,8 +5,8 @@ import { LoginPage } from "./pages/LoginPage";
 import { AboutPage } from "./pages/AboutPage";
 import { MapPage } from "./pages/MapPage";
 import { ExplorationBulletinsPage } from "./pages/ExplorationBulletinsPage";
-import { MetriquesEvaluationPage } from "./pages/MetriquesEvaluationPage";
-import { JsonMetricsPage } from "./pages/JsonMetricsPage";
+
+import { UnifiedMetricsPage } from "./pages/UnifiedMetricsPage";
 import { PilotagePipelinePage } from "./pages/PilotagePipelinePage";
 import { UploadBulletinPage } from "./pages/UploadBulletinPage";
 import { ValidationIssuesPage } from "./pages/ValidationIssuesPage";
@@ -24,8 +24,8 @@ export default function App() {
      <Route path="/login" element={<LoginPage />} />
      <Route path="/dashboard" element={<DashboardPage />} />
      <Route path="/exploration-bulletins" element={<ExplorationBulletinsPage />} />
-     <Route path="/metriques-evaluation" element={<MetriquesEvaluationPage />} />
-     <Route path="/metriques-json" element={<JsonMetricsPage />} />
+
+     <Route path="/metriques-unifiees" element={<UnifiedMetricsPage />} />
      <Route path="/pilotage-pipeline" element={<PilotagePipelinePage />} />
      <Route path="/upload" element={<UploadBulletinPage />} />
      <Route path="/map" element={<MapPage />} />

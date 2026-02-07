@@ -281,6 +281,31 @@ export interface MetricsListResponse {
   total: number;
 }
 
+export type ManualMetricsStation = {
+  nom?: string | null;
+  tmin?: number | null;
+  tmax?: number | null;
+  weather_icon?: string | null;
+};
+
+export type ManualMetricsEntry = {
+  date: string;
+  mapType: string;
+  source?: string | null;
+  stations: ManualMetricsStation[];
+};
+
+export type ManualMetricsIngestRequest = {
+  source?: string | null;
+  entries: ManualMetricsEntry[];
+};
+
+export type ManualMetricsIngestResponse = {
+  inserted_bulletins: number;
+  updated_payloads: number;
+  skipped: number;
+};
+
 export interface PipelineStepDto {
   key?: string;
   step?: string;
@@ -532,6 +557,13 @@ export async function fetchBulletinByDate(date: string, type?: string) {
   return requestJson<BulletinDetail>(`/bulletins/${encodeURIComponent(date)}${query}`);
 }
 
+export async function ingestManualMetrics(payload: ManualMetricsIngestRequest) {
+  return requestJson<ManualMetricsIngestResponse>("/json-metrics/ingest", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchMetricsByDate(date: string) {
   return requestJson<MetricsResponse>(`/metrics/${encodeURIComponent(date)}`);
 }
@@ -642,6 +674,27 @@ export interface StationMonthlyMetricsListResponse {
   total: number;
 }
 
+export type ContingencyScoreRow = {
+  code: string;
+  pod: number | null;
+  far: number | null;
+};
+
+export type ContingencyResponse = {
+  labels: string[];
+  matrix: number[][];
+  pc: number | null;
+  rows: ContingencyScoreRow[];
+  sample_size: number;
+  days_count?: number;
+  forecast_offset_days?: number;
+  filters: {
+    year?: number | null;
+    month?: number | null;
+    station_id?: number | null;
+  };
+};
+
 // Station Metrics API Functions
 export async function fetchStationsWithMetrics() {
   return requestJson<StationListResponse>(`/metrics/stations`);
@@ -661,6 +714,19 @@ export async function fetchMonthlyMetrics(year: number, month: number) {
 
 export async function fetchMonthlyMetricsList(limit = 12) {
   return requestJson<MonthlyMetricsListResponse>(`/metrics-monthly?limit=${limit}`);
+}
+
+export async function fetchContingencyMetrics(params: {
+  year?: number;
+  month?: number;
+  stationId?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params.year) query.set("year", String(params.year));
+  if (params.month) query.set("month", String(params.month));
+  if (params.stationId) query.set("station_id", String(params.stationId));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return requestJson<ContingencyResponse>(`/metrics/contingency${suffix}`);
 }
 
 // Utility function to format months in French (moved here for consistency)
@@ -942,4 +1008,36 @@ export async function translateBulletin(
     translations: Record<string, string>;
     rows_updated: number;
   }>(`/bulletins/${encodeURIComponent(date)}/translate?${params}`, {});
+}
+
+export type BulletinReprocessStartResponse = {
+  batch_id: string;
+  total: number;
+  status: "pending" | "running" | "completed" | "failed";
+  message?: string;
+};
+
+export type BulletinReprocessStatus = {
+  batch_id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  progress: {
+    current: number;
+    total: number;
+    success: number;
+    failed: number;
+    skipped: number;
+    missing: number;
+  };
+  errors?: string[];
+  error?: string;
+};
+
+export async function startBulletinsReprocess() {
+  return postJson<BulletinReprocessStartResponse>(`/bulletins/reprocess`, {});
+}
+
+export async function getBulletinsReprocessStatus(batchId: string) {
+  return requestJson<BulletinReprocessStatus>(
+    `/bulletins/reprocess/${encodeURIComponent(batchId)}`
+  );
 }

@@ -30,6 +30,7 @@ backend/data/*
 !backend/resources/templates/icons
 backend/models/*
 models/*
+backend/scripts/
 
 # React / Node.js
 node_modules/
