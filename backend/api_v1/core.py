@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -90,12 +91,13 @@ async def http_error_handler(request: Request, exc: HTTPException):
 
 async def validation_error_handler(request: Request, exc: RequestValidationError):
     trace_id = _get_trace_id(request)
+    encoded_errors = jsonable_encoder(exc.errors())
     payload = error_payload(
         status=422,
         code=ErrorCode.VALIDATION_ERROR.value,
         message="Échec de la validation.",
         trace_id=trace_id,
-        details={"errors": exc.errors()},
+        details={"errors": encoded_errors},
     )
     log_event(logging.WARNING, "validation_error", traceId=trace_id, status=422)
     return JSONResponse(status_code=422, content=payload, headers={TRACE_ID_HEADER: trace_id})

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   fetchJsonMetricsFile,
   fetchJsonMetricsFiles,
+  fetchBulletinByDate,
   ingestManualMetrics,
+  recalculateMetrics,
   type JsonMetricsFileInfo,
   type JsonMetricsFilePayload,
   type ManualMetricsEntry,
@@ -15,6 +17,13 @@ type JsonMetricsContentProps = {
 };
 
 type CachedPayloads = Record<string, JsonMetricsFilePayload>;
+type ConflictItem = { date: string; mapType: string; key: string };
+type PendingImport = {
+  entries: ManualMetricsEntry[];
+  errors: string[];
+  conflicts: ConflictItem[];
+  conflictErrors: string[];
+};
 
 const DEFAULT_SOURCE = "json-metrics";
 
@@ -65,6 +74,119 @@ export function JsonMetricsContent({ showInsertButton = true }: JsonMetricsConte
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const [acceptedConflicts, setAcceptedConflicts] = useState<string[]>([]);
+  const [showOnlyConflicts, setShowOnlyConflicts] = useState(false);
+
+  const checkExistingBulletins = async (entries: ManualMetricsEntry[]) => {
+    const conflicts: ConflictItem[] = [];
+    const errors: string[] = [];
+    const visited = new Set<string>();
+
+    for (const entry of entries) {
+      if (!entry.date || !entry.mapType) continue;
+      const key = `${entry.date}|${entry.mapType}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      try {
+        await fetchBulletinByDate(entry.date, entry.mapType);
+        conflicts.push({ date: entry.date, mapType: entry.mapType, key });
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status && status !== 404) {
+          errors.push(`Verification impossible pour ${entry.date} (${entry.mapType}).`);
+        }
+      }
+    }
+
+    return { conflicts, errors };
+  };
+
+  const resetPendingImport = () => {
+    setPendingImport(null);
+    setAcceptedConflicts([]);
+    setShowOnlyConflicts(false);
+  };
+
+  const toggleConflict = (key: string) => {
+    setAcceptedConflicts((prev) =>
+      prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key],
+    );
+  };
+
+  const acceptAllConflicts = () => {
+    if (!pendingImport) return;
+    setAcceptedConflicts(pendingImport.conflicts.map((item) => item.key));
+  };
+
+  const acceptNoneConflicts = () => {
+    setAcceptedConflicts([]);
+  };
+
+  const executeImport = async (
+    entries: ManualMetricsEntry[],
+    errors: string[],
+    conflictErrors: string[],
+    ignoredConflicts = 0,
+  ) => {
+    try {
+      setImporting(true);
+      setImportMessage(null);
+      setImportErrors([]);
+
+      const result = await ingestManualMetrics({
+        source: DEFAULT_SOURCE,
+        entries,
+      });
+      const message = [
+        `Imported: ${result.inserted_bulletins} new bulletins.`,
+        `Updated: ${result.updated_payloads} payloads.`,
+        `Skipped: ${result.skipped} entries.`,
+      ].join(" ");
+      const ignoredMessage =
+        ignoredConflicts > 0 ? `Ignored conflicts: ${ignoredConflicts}.` : "";
+      const summary = ignoredMessage ? `${message} ${ignoredMessage}` : message;
+      setImportMessage(`${summary} Recalcul en cours...`);
+      setImportErrors([...errors, ...conflictErrors]);
+
+      const recalculated = await recalculateMetrics(true);
+      if (recalculated.status === "no_data") {
+        setImportMessage(
+          `${summary} ${recalculated.message ?? "Aucune donnee a recalculer."}`,
+        );
+      } else {
+        const monthsAgg = recalculated.result?.monthly?.months_aggregated ?? 0;
+        setImportMessage(`${summary} Recalcul termine : ${monthsAgg} mois agreges.`);
+      }
+    } catch (err) {
+      console.error("Failed to ingest manual metrics:", err);
+      setImportMessage("Failed to ingest json metrics.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleResolveConflicts = async () => {
+    if (!pendingImport) return;
+    const accepted = new Set(acceptedConflicts);
+    const conflictsSet = new Set(pendingImport.conflicts.map((item) => item.key));
+    const filtered = pendingImport.entries.filter((entry) => {
+      const key = `${entry.date}|${entry.mapType}`;
+      if (conflictsSet.has(key)) {
+        return accepted.has(key);
+      }
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      setImportMessage("Aucune entree selectionnee a importer.");
+      setImportErrors([...pendingImport.errors, ...pendingImport.conflictErrors]);
+      return;
+    }
+    const ignoredCount = pendingImport.conflicts.length - accepted.size;
+    resetPendingImport();
+    await executeImport(filtered, pendingImport.errors, pendingImport.conflictErrors, ignoredCount);
+  };
 
   const uniqueMonths = useMemo(() => {
     const months = files
@@ -75,9 +197,17 @@ export function JsonMetricsContent({ showInsertButton = true }: JsonMetricsConte
 
   const filteredFiles = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const conflictKeys = pendingImport
+      ? new Set(pendingImport.conflicts.map((conflict) => conflict.key))
+      : null;
     return files.filter((file) => {
       if (monthFilter !== "all" && file.month !== monthFilter) return false;
       if (typeFilter !== "all" && file.map_type !== typeFilter) return false;
+      if (showOnlyConflicts && conflictKeys) {
+        const mapType = normalizeMapType(file.map_type);
+        const key = file.date && mapType ? `${file.date}|${mapType}` : null;
+        if (!key || !conflictKeys.has(key)) return false;
+      }
       if (!query) return true;
       return (
         file.name.toLowerCase().includes(query) ||
@@ -85,7 +215,7 @@ export function JsonMetricsContent({ showInsertButton = true }: JsonMetricsConte
         (file.date ?? "").includes(query)
       );
     });
-  }, [files, monthFilter, typeFilter, search]);
+  }, [files, monthFilter, pendingImport, search, showOnlyConflicts, typeFilter]);
 
   const loadFiles = async () => {
     try {
@@ -184,6 +314,7 @@ export function JsonMetricsContent({ showInsertButton = true }: JsonMetricsConte
       setImporting(true);
       setImportMessage(null);
       setImportErrors([]);
+      resetPendingImport();
 
       const { entries, errors } = await buildEntries();
       if (entries.length === 0) {
@@ -192,17 +323,16 @@ export function JsonMetricsContent({ showInsertButton = true }: JsonMetricsConte
         return;
       }
 
-      const result = await ingestManualMetrics({
-        source: DEFAULT_SOURCE,
-        entries,
-      });
-      const message = [
-        `Imported: ${result.inserted_bulletins} new bulletins.`,
-        `Updated: ${result.updated_payloads} payloads.`,
-        `Skipped: ${result.skipped} entries.`,
-      ].join(" ");
-      setImportMessage(message);
-      setImportErrors(errors);
+      const { conflicts, errors: conflictErrors } = await checkExistingBulletins(entries);
+      if (conflicts.length > 0) {
+        setPendingImport({ entries, errors, conflicts, conflictErrors });
+        setAcceptedConflicts([]);
+        setImportMessage("Conflits detectes. Veuillez valider les mises a jour.");
+        setImportErrors([...errors, ...conflictErrors]);
+        return;
+      }
+
+      await executeImport(entries, errors, conflictErrors);
     } catch (err) {
       console.error("Failed to ingest manual metrics:", err);
       setImportMessage("Failed to ingest json metrics.");
@@ -291,6 +421,17 @@ export function JsonMetricsContent({ showInsertButton = true }: JsonMetricsConte
             Refresh
           </button>
         </div>
+        {pendingImport && (
+          <label className="flex items-center gap-2 pb-1 text-xs font-semibold text-muted">
+            <input
+              type="checkbox"
+              checked={showOnlyConflicts}
+              onChange={(event) => setShowOnlyConflicts(event.target.checked)}
+              className="size-4 rounded border border-[var(--border)]"
+            />
+            Afficher uniquement conflits
+          </label>
+        )}
         {showInsertButton && (
           <div className="ml-auto flex items-center gap-2 pb-1">
             <button
@@ -315,6 +456,90 @@ export function JsonMetricsContent({ showInsertButton = true }: JsonMetricsConte
           {importErrors.map((message, idx) => (
             <div key={idx}>{message}</div>
           ))}
+        </div>
+      )}
+
+      {pendingImport && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-semibold text-amber-900">Conflits detectes</p>
+              <p className="text-xs text-amber-700">
+                Selectionnez les bulletins a mettre a jour.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={acceptAllConflicts}
+                className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900"
+              >
+                Tout accepter
+              </button>
+              <button
+                type="button"
+                onClick={acceptNoneConflicts}
+                className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs text-amber-800"
+              >
+                Tout refuser
+              </button>
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto space-y-2 pr-2">
+            {pendingImport.conflicts.map((conflict) => {
+              const checked = acceptedConflicts.includes(conflict.key);
+              return (
+                <label
+                  key={conflict.key}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-3 py-2"
+                >
+                  <div>
+                    <div className="font-semibold text-amber-900">{conflict.date}</div>
+                    <div className="text-xs text-amber-700">{conflict.mapType}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleConflict(conflict.key)}
+                      className="size-4 rounded border border-amber-300"
+                    />
+                    <span className="text-xs text-amber-800">Accepter</span>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+          {pendingImport.conflictErrors.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-100 px-3 py-2 text-xs text-amber-800">
+              <p className="font-semibold">Verifications partielles:</p>
+              {pendingImport.conflictErrors.map((message, idx) => (
+                <div key={idx}>{message}</div>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleResolveConflicts}
+              className="rounded-full bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+            >
+              Continuer l'import
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetPendingImport();
+                setImportMessage("Import annule.");
+              }}
+              className="rounded-full border border-amber-300 px-4 py-2 text-xs text-amber-800"
+            >
+              Annuler
+            </button>
+            <span className="text-xs text-amber-700">
+              {acceptedConflicts.length} / {pendingImport.conflicts.length} acceptes
+            </span>
+          </div>
         </div>
       )}
 

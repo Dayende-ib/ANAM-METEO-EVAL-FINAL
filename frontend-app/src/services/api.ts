@@ -596,10 +596,7 @@ export async function fetchBulletinByDate(date: string, type?: string) {
 }
 
 export async function ingestManualMetrics(payload: ManualMetricsIngestRequest) {
-  return requestJson<ManualMetricsIngestResponse>("/json-metrics/ingest", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return postJson<ManualMetricsIngestResponse>("/json-metrics/ingest", payload);
 }
 
 export async function fetchMetricsByDate(date: string) {

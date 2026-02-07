@@ -17,6 +17,7 @@ import { DetailsStationsPage } from "./pages/DetailsStationsPage";
 import { BackgroundTasksNotifier } from "./components/BackgroundTasksNotifier";
 import { StationDataPage } from "./pages/StationDataPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
+import { FeedBulletinPage } from "./pages/FeedBulletinPage";
 import { fetchAuthMe, getAuthToken, setAuthToken } from "./services/api";
 
 function RequireAuth() {
@@ -115,8 +116,9 @@ export default function App() {
      <Route path="/" element={<HomePage />} />
      <Route path="/login" element={<LoginPage />} />
      <Route element={<RequireAuth />}>
-      <Route path="/dashboard" element={<DashboardPage />} />
-      <Route path="/exploration-bulletins" element={<ExplorationBulletinsPage />} />
+     <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/feed-bulletin-jour" element={<FeedBulletinPage />} />
+     <Route path="/exploration-bulletins" element={<ExplorationBulletinsPage />} />
       <Route path="/metriques-unifiees" element={<UnifiedMetricsPage />} />
       <Route path="/pilotage-pipeline" element={<PilotagePipelinePage />} />
       <Route path="/upload" element={<UploadBulletinPage />} />

@@ -6,6 +6,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Tableau de bord", to: "/dashboard", icon: "dashboard" },
+  { label: "Feed bulletin du jour", to: "/feed-bulletin-jour", icon: "feed" },
   { label: "Exploration des bulletins", to: "/exploration-bulletins", icon: "description" },
   { label: "Metriques unifiees", to: "/metriques-unifiees", icon: "analytics" },
   { label: "Pilotage du pipeline", to: "/pilotage-pipeline", icon: "settings" },

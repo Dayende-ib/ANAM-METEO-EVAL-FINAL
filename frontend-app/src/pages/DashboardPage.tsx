@@ -907,7 +907,7 @@ if (loading) {
                      Tmin Observée
                    </span>
                    <span className="inline-flex items-center gap-2">
-                     <span className="h-2.5 w-2.5 rounded-full bg-blue-300" />
+                     <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
                      Tmin Prévue
                    </span>
                    <span className="ml-auto font-mono text-[11px]">{tminRangeLabel}</span>
@@ -924,8 +924,8 @@ if (loading) {
                        <stop offset="100%" stopColor="#1D4ED8" />
                      </linearGradient>
                      <linearGradient id="tminPrevGrad" x1="0" y1="0" x2="1" y2="0">
-                       <stop offset="0%" stopColor="#60A5FA" />
-                       <stop offset="100%" stopColor="#3B82F6" />
+                       <stop offset="0%" stopColor="#4ADE80" />
+                       <stop offset="100%" stopColor="#22C55E" />
                      </linearGradient>
                    </defs>
                  <rect
@@ -996,7 +996,7 @@ if (loading) {
                           <circle cx={x} cy={obsY} r={3.5} fill="#2563EB" />
                         )}
                         {prevY !== null && (
-                          <circle cx={x} cy={prevY} r={3.5} fill="#60A5FA" />
+                          <circle cx={x} cy={prevY} r={3.5} fill="#22C55E" />
                         )}
                       </g>
                     );
@@ -1080,7 +1080,7 @@ if (loading) {
                      Tmax Observée
                    </span>
                    <span className="inline-flex items-center gap-2">
-                     <span className="h-2.5 w-2.5 rounded-full bg-red-300" />
+                     <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
                      Tmax Prévue
                    </span>
                    <span className="ml-auto font-mono text-[11px]">{tmaxRangeLabel}</span>
@@ -1097,8 +1097,8 @@ if (loading) {
                        <stop offset="100%" stopColor="#B91C1C" />
                      </linearGradient>
                      <linearGradient id="tmaxPrevGrad" x1="0" y1="0" x2="1" y2="0">
-                       <stop offset="0%" stopColor="#FCA5A5" />
-                       <stop offset="100%" stopColor="#F87171" />
+                       <stop offset="0%" stopColor="#4ADE80" />
+                       <stop offset="100%" stopColor="#22C55E" />
                      </linearGradient>
                    </defs>
                  <rect
@@ -1169,7 +1169,7 @@ if (loading) {
                           <circle cx={x} cy={obsY} r={3.5} fill="#DC2626" />
                         )}
                         {prevY !== null && (
-                          <circle cx={x} cy={prevY} r={3.5} fill="#F87171" />
+                          <circle cx={x} cy={prevY} r={3.5} fill="#22C55E" />
                         )}
                       </g>
                     );
