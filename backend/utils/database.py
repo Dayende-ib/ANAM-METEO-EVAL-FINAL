@@ -86,6 +86,7 @@ class DatabaseManager:
                 name TEXT NOT NULL,
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
+                is_admin INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -335,6 +336,7 @@ class DatabaseManager:
         self._ensure_column(cursor, 'interpretation_cache', 'provider', 'TEXT')
         self._ensure_column(cursor, 'processing_jobs', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
         self._ensure_column(cursor, 'app_state', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+        self._ensure_column(cursor, 'auth_users', 'is_admin', 'INTEGER DEFAULT 0')
         
         # Création des index pour la performance
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_bulletins_date ON bulletins(date)")
@@ -1498,7 +1500,7 @@ class DatabaseManager:
         cursor = conn.cursor()
         cursor.execute(
             '''
-            SELECT id, name, email, password_hash, created_at, updated_at
+            SELECT id, name, email, password_hash, is_admin, created_at, updated_at
             FROM auth_users
             WHERE email = ?
             ''',
@@ -1512,24 +1514,26 @@ class DatabaseManager:
             "name": row[1],
             "email": row[2],
             "password_hash": row[3],
-            "created_at": row[4],
-            "updated_at": row[5],
+            "is_admin": bool(row[4]) if row[4] is not None else False,
+            "created_at": row[5],
+            "updated_at": row[6],
         }
 
-    def upsert_auth_user(self, name: str, email: str, password: str) -> None:
+    def upsert_auth_user(self, name: str, email: str, password: str, is_admin: bool = False) -> None:
         conn = self.get_connection()
         cursor = conn.cursor()
         password_hash = self._hash_password(password)
         cursor.execute(
             '''
-            INSERT INTO auth_users (name, email, password_hash)
-            VALUES (?, ?, ?)
+            INSERT INTO auth_users (name, email, password_hash, is_admin)
+            VALUES (?, ?, ?, ?)
             ON CONFLICT(email) DO UPDATE SET
                 name = excluded.name,
                 password_hash = excluded.password_hash,
+                is_admin = excluded.is_admin,
                 updated_at = CURRENT_TIMESTAMP
             ''',
-            (name, email, password_hash),
+            (name, email, password_hash, 1 if is_admin else 0),
         )
         conn.commit()
 
@@ -1538,10 +1542,24 @@ class DatabaseManager:
         auth_users: Optional[str],
         auth_username: Optional[str],
         auth_password: Optional[str],
+        auth_admins: Optional[str] = None,
     ) -> int:
         """Seed auth users from environment variables."""
         seeded = 0
         entries: List[tuple] = []
+        admin_emails: Optional[set] = None
+        if auth_admins:
+            admin_emails = {email.strip().lower() for email in auth_admins.split(",") if email.strip()}
+        admin_set = False
+
+        def mark_admin(email: str) -> bool:
+            nonlocal admin_set
+            if admin_emails is not None and admin_emails:
+                return email.lower() in admin_emails
+            if not admin_set:
+                admin_set = True
+                return True
+            return False
         if auth_users:
             for entry in auth_users.split(","):
                 entry = entry.strip()
@@ -1553,20 +1571,25 @@ class DatabaseManager:
                 if not email or not password:
                     continue
                 name = email.split("@")[0] or email
-                entries.append((name, email, password))
+                is_admin = mark_admin(email)
+                entries.append((name, email, password, is_admin))
         if auth_username and auth_password:
             username = auth_username.strip()
             password = auth_password.strip()
             if username and password:
                 email = username if "@" in username else f"{username}@local"
                 name = username
-                entries.append((name, email, password))
+                is_admin = mark_admin(email)
+                entries.append((name, email, password, is_admin))
         if not entries:
             return 0
-        for name, email, password in entries:
-            if self.get_auth_user_by_email(email):
+        for name, email, password, is_admin in entries:
+            existing = self.get_auth_user_by_email(email)
+            if existing:
+                if is_admin and not existing.get("is_admin"):
+                    self.update_auth_user(existing["id"], is_admin=True)
                 continue
-            self.upsert_auth_user(name, email, password)
+            self.upsert_auth_user(name, email, password, is_admin=is_admin)
             seeded += 1
         return seeded
 
@@ -1575,7 +1598,7 @@ class DatabaseManager:
         cursor = conn.cursor()
         cursor.execute(
             '''
-            SELECT id, name, email, created_at, updated_at
+            SELECT id, name, email, is_admin, created_at, updated_at
             FROM auth_users
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?
@@ -1590,22 +1613,23 @@ class DatabaseManager:
                     "id": row[0],
                     "name": row[1],
                     "email": row[2],
-                    "created_at": row[3],
-                    "updated_at": row[4],
+                    "is_admin": bool(row[3]) if row[3] is not None else False,
+                    "created_at": row[4],
+                    "updated_at": row[5],
                 }
             )
         return results
 
-    def create_auth_user(self, name: str, email: str, password: str) -> Dict:
+    def create_auth_user(self, name: str, email: str, password: str, is_admin: bool = False) -> Dict:
         conn = self.get_connection()
         cursor = conn.cursor()
         password_hash = self._hash_password(password)
         cursor.execute(
             '''
-            INSERT INTO auth_users (name, email, password_hash)
-            VALUES (?, ?, ?)
+            INSERT INTO auth_users (name, email, password_hash, is_admin)
+            VALUES (?, ?, ?, ?)
             ''',
-            (name, email, password_hash),
+            (name, email, password_hash, 1 if is_admin else 0),
         )
         conn.commit()
         return self.get_auth_user_by_email(email) or {"name": name, "email": email}
@@ -1615,7 +1639,7 @@ class DatabaseManager:
         cursor = conn.cursor()
         cursor.execute(
             '''
-            SELECT id, name, email, password_hash, created_at, updated_at
+            SELECT id, name, email, password_hash, is_admin, created_at, updated_at
             FROM auth_users
             WHERE id = ?
             ''',
@@ -1629,8 +1653,9 @@ class DatabaseManager:
             "name": row[1],
             "email": row[2],
             "password_hash": row[3],
-            "created_at": row[4],
-            "updated_at": row[5],
+            "is_admin": bool(row[4]) if row[4] is not None else False,
+            "created_at": row[5],
+            "updated_at": row[6],
         }
 
     def update_auth_user(
@@ -1639,6 +1664,7 @@ class DatabaseManager:
         name: Optional[str] = None,
         email: Optional[str] = None,
         password: Optional[str] = None,
+        is_admin: Optional[bool] = None,
     ) -> Optional[Dict]:
         current = self.get_auth_user_by_id(user_id)
         if not current:
@@ -1654,6 +1680,9 @@ class DatabaseManager:
         if password is not None:
             fields.append("password_hash = ?")
             params.append(self._hash_password(password))
+        if is_admin is not None:
+            fields.append("is_admin = ?")
+            params.append(1 if is_admin else 0)
         if not fields:
             return current
         fields.append("updated_at = CURRENT_TIMESTAMP")

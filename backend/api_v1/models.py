@@ -163,24 +163,28 @@ class LoginResponse(BaseModel):
 class MeResponse(BaseModel):
     username: str
     expires_at: int
+    is_admin: Optional[bool] = None
 
 
 class AuthUserCreateRequest(BaseModel):
     name: str = Field(..., min_length=1)
     email: str = Field(..., min_length=3)
     password: str = Field(..., min_length=1)
+    is_admin: Optional[bool] = False
 
 
 class AuthUserUpdateRequest(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
     password: Optional[str] = None
+    is_admin: Optional[bool] = None
 
 
 class AuthUserItem(BaseModel):
     id: int
     name: str
     email: str
+    is_admin: bool = False
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

@@ -66,11 +66,38 @@ async def login(request: LoginRequest):
 async def auth_me(authorization: Optional[str] = Header(None)):
     """Validate the provided token and return the current user."""
     username, expires_at = _get_current_user(authorization)
-    return {"username": username, "expires_at": expires_at}
+    is_admin = False
+    if core.db_manager is not None:
+        user = core.db_manager.get_auth_user_by_email(username)
+        if user:
+            is_admin = bool(user.get("is_admin"))
+    return {"username": username, "expires_at": expires_at, "is_admin": is_admin}
 
 
 def _require_auth(authorization: Optional[str]):
     return _get_current_user(authorization)
+
+
+def _require_admin(authorization: Optional[str]):
+    username, _ = _get_current_user(authorization)
+    if core.db_manager is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": ErrorCode.SERVICE_UNAVAILABLE.value,
+                "message": "Database unavailable.",
+            },
+        )
+    user = core.db_manager.get_auth_user_by_email(username)
+    if not user or not user.get("is_admin"):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": ErrorCode.FORBIDDEN.value,
+                "message": "Admin privileges required.",
+            },
+        )
+    return user
 
 
 @router.get("/auth/users", response_model=AuthUsersPage)
@@ -80,7 +107,7 @@ async def list_auth_users(
     offset: int = 0,
 ):
     _ensure_db_ready()
-    _require_auth(authorization)
+    _require_admin(authorization)
     assert core.db_manager is not None
     items = core.db_manager.list_auth_users(limit=limit, offset=offset)
     total = core.db_manager.count_auth_users()
@@ -93,10 +120,15 @@ async def create_auth_user(
     authorization: Optional[str] = Header(None),
 ):
     _ensure_db_ready()
-    _require_auth(authorization)
+    _require_admin(authorization)
     assert core.db_manager is not None
     try:
-        user = core.db_manager.create_auth_user(payload.name.strip(), payload.email.strip(), payload.password)
+        user = core.db_manager.create_auth_user(
+            payload.name.strip(),
+            payload.email.strip(),
+            payload.password,
+            is_admin=bool(payload.is_admin),
+        )
     except sqlite3.IntegrityError:
         raise HTTPException(
             status_code=409,
@@ -109,6 +141,7 @@ async def create_auth_user(
         "id": user.get("id"),
         "name": user.get("name"),
         "email": user.get("email"),
+        "is_admin": bool(user.get("is_admin")),
         "created_at": user.get("created_at"),
         "updated_at": user.get("updated_at"),
     }
@@ -121,9 +154,9 @@ async def update_auth_user(
     authorization: Optional[str] = Header(None),
 ):
     _ensure_db_ready()
-    _require_auth(authorization)
+    current_user = _require_admin(authorization)
     assert core.db_manager is not None
-    if payload.name is None and payload.email is None and payload.password is None:
+    if payload.name is None and payload.email is None and payload.password is None and payload.is_admin is None:
         raise HTTPException(
             status_code=400,
             detail={
@@ -131,12 +164,36 @@ async def update_auth_user(
                 "message": "No updates provided.",
             },
         )
+    if (
+        payload.is_admin is False
+        and current_user
+        and current_user.get("id") == user_id
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": ErrorCode.BAD_REQUEST.value,
+                "message": "Cannot remove your own admin privileges.",
+            },
+        )
+    if payload.email is not None and current_user and current_user.get("id") == user_id:
+        next_email = payload.email.strip()
+        current_email = current_user.get("email") or ""
+        if next_email and next_email != current_email:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": ErrorCode.BAD_REQUEST.value,
+                    "message": "Cannot change your own email.",
+                },
+            )
     try:
         user = core.db_manager.update_auth_user(
             user_id,
             name=payload.name.strip() if payload.name is not None else None,
             email=payload.email.strip() if payload.email is not None else None,
             password=payload.password,
+            is_admin=payload.is_admin,
         )
     except sqlite3.IntegrityError:
         raise HTTPException(
@@ -158,6 +215,7 @@ async def update_auth_user(
         "id": user.get("id"),
         "name": user.get("name"),
         "email": user.get("email"),
+        "is_admin": bool(user.get("is_admin")),
         "created_at": user.get("created_at"),
         "updated_at": user.get("updated_at"),
     }
@@ -169,8 +227,16 @@ async def delete_auth_user(
     authorization: Optional[str] = Header(None),
 ):
     _ensure_db_ready()
-    _require_auth(authorization)
+    current_user = _require_admin(authorization)
     assert core.db_manager is not None
+    if current_user and current_user.get("id") == user_id:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": ErrorCode.BAD_REQUEST.value,
+                "message": "Cannot delete your own account.",
+            },
+        )
     deleted = core.db_manager.delete_auth_user(user_id)
     if not deleted:
         raise HTTPException(

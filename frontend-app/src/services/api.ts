@@ -681,6 +681,7 @@ export interface StationDataHistoryResponse {
 export interface AuthMeResponse {
   username: string;
   expires_at: number;
+  is_admin?: boolean;
 }
 
 export interface AuthLoginResponse {
@@ -702,6 +703,72 @@ export async function loginAuth(email: string, password: string) {
 
 export async function fetchAuthMe() {
   return requestJson<AuthMeResponse>("/auth/me");
+}
+
+export interface AuthUserItem {
+  id: number;
+  name: string;
+  email: string;
+  is_admin: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AuthUsersPage {
+  items: AuthUserItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AuthUserCreateRequest {
+  name: string;
+  email: string;
+  password: string;
+  is_admin?: boolean;
+}
+
+export interface AuthUserUpdateRequest {
+  name?: string;
+  email?: string;
+  password?: string;
+  is_admin?: boolean | null;
+}
+
+export async function fetchAuthUsers(limit = 50, offset = 0) {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return requestJson<AuthUsersPage>(`/auth/users?${query.toString()}`);
+}
+
+export async function createAuthUser(payload: AuthUserCreateRequest) {
+  return requestJson<AuthUserItem>("/auth/users", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAuthUser(userId: number, payload: AuthUserUpdateRequest) {
+  return requestJson<AuthUserItem>(`/auth/users/${userId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAuthUser(userId: number) {
+  return requestJson<{ deleted: boolean }>(`/auth/users/${userId}`, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/json",
+    },
+  });
 }
 
 export async function fetchStationDataFilters() {

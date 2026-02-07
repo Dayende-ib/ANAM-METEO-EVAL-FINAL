@@ -132,6 +132,7 @@ async def startup_event():
         os.getenv("AUTH_USERS"),
         os.getenv("AUTH_USERNAME"),
         os.getenv("AUTH_PASSWORD"),
+        os.getenv("AUTH_ADMIN_EMAILS"),
     )
     core.result_file = core.config.output_directory / "resultats_interpretes.json"
     

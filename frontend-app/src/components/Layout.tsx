@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "./Sidebar";
-import { NAV_ITEMS, type NavItem } from "../navigation";
+import { NAV_ITEMS, ADMIN_NAV_ITEM, type NavItem } from "../navigation";
 import { GlobalStatusIndicator } from "./GlobalStatusIndicator";
 import { API_BASE_URL, BACKEND_DEBUG_MODE, DEBUG_MODE } from "../config";
 import { setPipelineRunning, statusStore } from "../services/statusStore";
@@ -46,6 +46,7 @@ export function Layout({ children, title, navItems = NAV_ITEMS, fixed = false, f
   () => statusStore.getState().pipelineRunning
  );
  const [authUser, setAuthUser] = useState<string | null>(null);
+ const [isAdmin, setIsAdmin] = useState(false);
 
  useEffect(() => {
   document.documentElement.classList.toggle("dark", isDarkMode);
@@ -167,10 +168,12 @@ export function Layout({ children, title, navItems = NAV_ITEMS, fixed = false, f
         const payload = await fetchAuthMe();
         if (!cancelled) {
           setAuthUser(payload.username);
+          setIsAdmin(Boolean(payload.is_admin));
         }
       } catch {
         if (!cancelled) {
           setAuthUser(null);
+          setIsAdmin(false);
         }
       }
     };
@@ -197,6 +200,15 @@ export function Layout({ children, title, navItems = NAV_ITEMS, fixed = false, f
     return cleaned ? cleaned.charAt(0).toUpperCase() : "?";
   }, [authUser]);
 
+  const computedNavItems = useMemo(() => {
+    const baseItems = navItems ?? NAV_ITEMS;
+    const hasAdminItem = baseItems.some((item) => item.to === ADMIN_NAV_ITEM.to);
+    if (isAdmin) {
+      return hasAdminItem ? baseItems : [...baseItems, ADMIN_NAV_ITEM];
+    }
+    return baseItems.filter((item) => item.to !== ADMIN_NAV_ITEM.to);
+  }, [navItems, isAdmin]);
+
   const mainPadding = title ? "pt-24" : "pt-6";
   const mainOverflow = fixed ? "overflow-hidden" : "overflow-y-auto";
   const mainPaddingBottom = fixed ? "pb-0" : "pb-6";
@@ -212,7 +224,7 @@ export function Layout({ children, title, navItems = NAV_ITEMS, fixed = false, f
  return (
     <div className="h-screen overflow-hidden bg-transparent">
       <Sidebar
-        navItems={navItems}
+        navItems={computedNavItems}
         isMobileOpen={isSidebarOpen}
         isDesktopOpen={isDesktopSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
@@ -256,6 +268,11 @@ export function Layout({ children, title, navItems = NAV_ITEMS, fixed = false, f
               {debugLabel && (
                 <span className="rounded-full border border-red-300/60 bg-red-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-red-700">
                   {debugLabel}
+                </span>
+              )}
+              {isAdmin && (
+                <span className="rounded-full border border-emerald-200 bg-emerald-100/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                  Admin
                 </span>
               )}
               <div className="relative hidden md:flex">

@@ -16,6 +16,7 @@ import { ParametresPage } from "./pages/ParametresPage";
 import { DetailsStationsPage } from "./pages/DetailsStationsPage";
 import { BackgroundTasksNotifier } from "./components/BackgroundTasksNotifier";
 import { StationDataPage } from "./pages/StationDataPage";
+import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { fetchAuthMe, getAuthToken, setAuthToken } from "./services/api";
 
 function RequireAuth() {
@@ -65,6 +66,47 @@ function RequireAuth() {
  return <Outlet />;
 }
 
+function RequireAdmin() {
+ const [status, setStatus] = useState<"checking" | "ok" | "forbidden">("checking");
+
+ useEffect(() => {
+  let cancelled = false;
+  const checkAdmin = async () => {
+   try {
+    const payload = await fetchAuthMe();
+    if (cancelled) return;
+    if (payload.is_admin) {
+     setStatus("ok");
+    } else {
+     setStatus("forbidden");
+    }
+   } catch {
+    if (!cancelled) {
+     setStatus("forbidden");
+    }
+   }
+  };
+  checkAdmin();
+  return () => {
+   cancelled = true;
+  };
+ }, []);
+
+ if (status === "checking") {
+  return (
+   <div className="flex min-h-screen items-center justify-center bg-canvas text-ink">
+    <div className="surface-panel p-6 text-sm text-muted">Verification des droits...</div>
+   </div>
+  );
+ }
+
+ if (status === "forbidden") {
+  return <Navigate to="/dashboard" replace />;
+ }
+
+ return <Outlet />;
+}
+
 export default function App() {
  return (
   <BrowserRouter>
@@ -81,9 +123,12 @@ export default function App() {
       <Route path="/map" element={<MapPage />} />
       <Route path="/details-stations" element={<DetailsStationsPage />} />
       <Route path="/donnees-stations" element={<StationDataPage />} />
-      <Route path="/validation-issues" element={<ValidationIssuesPage />} />
-      <Route path="/parametres" element={<ParametresPage />} />
-      <Route path="/about" element={<AboutPage />} />
+     <Route path="/validation-issues" element={<ValidationIssuesPage />} />
+     <Route path="/parametres" element={<ParametresPage />} />
+     <Route path="/about" element={<AboutPage />} />
+      <Route element={<RequireAdmin />}>
+       <Route path="/admin-utilisateurs" element={<AdminUsersPage />} />
+      </Route>
      </Route>
      <Route path="*" element={<NotFoundPage />} />
     </Routes>
