@@ -5,7 +5,7 @@
 
 export interface BackgroundTask {
   id: string;
-  type: "bulk_translation" | "single_translation";
+  type: "bulk_translation" | "single_translation" | "bulletin_reprocess";
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   progress: {
     current: number;
@@ -15,12 +15,16 @@ export interface BackgroundTask {
     taskIds: string[];
     dateFilter?: string;
     typeFilter?: string;
-    languages: string[];
+    languages?: string[];
+    label?: string;
     startTime: number;
   };
   result?: {
     successCount: number;
     failedCount: number;
+    skippedCount?: number;
+    missingCount?: number;
+    details?: string[];
   };
   error?: string;
 }
@@ -29,7 +33,8 @@ interface TaskMetadata {
   taskIds: string[];
   dateFilter?: string;
   typeFilter?: string;
-  languages: string[];
+  languages?: string[];
+  label?: string;
 }
 
 class BackgroundTasksStore {
@@ -51,7 +56,8 @@ class BackgroundTasksStore {
    */
   createTask(
     type: BackgroundTask["type"],
-    metadata: TaskMetadata
+    metadata: TaskMetadata,
+    totalOverride?: number
   ): string {
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
@@ -59,7 +65,7 @@ class BackgroundTasksStore {
       id: taskId,
       type,
       status: "pending",
-      progress: { current: 0, total: metadata.taskIds.length },
+      progress: { current: 0, total: totalOverride ?? metadata.taskIds.length },
       metadata: {
         ...metadata,
         startTime: Date.now(),

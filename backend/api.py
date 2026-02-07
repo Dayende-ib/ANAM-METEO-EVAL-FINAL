@@ -46,6 +46,7 @@ from backend.api_v1.pipeline import router as pipeline_router, _auto_pipeline_wo
 from backend.api_v1.metrics import router as metrics_router
 from backend.api_v1.data_management import router as data_management_router
 from backend.api_v1.validation import router as validation_router
+from backend.api_v1.station_data import router as station_data_router
 
 # Chargement de l'environnement
 if load_dotenv is not None:
@@ -127,6 +128,12 @@ async def startup_event():
     core.config = Config()
     core.db_manager = DatabaseManager(core.config.db_path)
     core.db_manager.initialize_database()
+    core.db_manager.seed_auth_users_from_env(
+        os.getenv("AUTH_USERS"),
+        os.getenv("AUTH_USERNAME"),
+        os.getenv("AUTH_PASSWORD"),
+        os.getenv("AUTH_ADMIN_EMAILS"),
+    )
     core.result_file = core.config.output_directory / "resultats_interpretes.json"
     
     # Note : Le modèle NLLB sera chargé à la demande (lazy loading) pour économiser la RAM au démarrage
@@ -191,6 +198,7 @@ api_v1_router.include_router(pipeline_router)
 api_v1_router.include_router(metrics_router)
 api_v1_router.include_router(data_management_router)
 api_v1_router.include_router(validation_router)
+api_v1_router.include_router(station_data_router)
 
 app.include_router(api_v1_router)
 

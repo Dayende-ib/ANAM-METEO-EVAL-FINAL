@@ -3,6 +3,41 @@ import { finishRequest, reportError, startRequest } from "./statusStore";
 
 const API_BASE = API_BASE_URL.replace(/\/+$/, "");
 const CACHE_PREFIX = "api_cache:";
+const AUTH_TOKEN_KEY = "anam_auth_token";
+
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw =
+    window.localStorage.getItem(AUTH_TOKEN_KEY) ??
+    window.sessionStorage.getItem(AUTH_TOKEN_KEY);
+  return raw && raw.trim() ? raw : null;
+}
+
+export function setAuthToken(token: string | null, persist = true) {
+  if (typeof window === "undefined") return;
+  if (!token) {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    return;
+  }
+  if (persist) {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+    window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  } else {
+    window.sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+function attachAuthHeader(headers: Headers) {
+  if (headers.has("Authorization")) {
+    return;
+  }
+  const token = getAuthToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+}
 
 function readCache<T>(key: string): T | null {
   if (API_CACHE_TTL_MS <= 0 || typeof window === "undefined") {
@@ -109,6 +144,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   if (!headers.has("X-Trace-Id")) {
     headers.set("X-Trace-Id", createTraceId());
   }
+  attachAuthHeader(headers);
   startRequest();
   try {
     const response = await fetch(url, { ...init, headers });
@@ -180,9 +216,11 @@ async function requestJsonWithFallback<T>(path: string, init?: RequestInit): Pro
       throw error;
     }
     const url = `${altBase}${path.startsWith("/") ? path : `/${path}`}`;
+    const headers = new Headers(init?.headers ?? {});
+    attachAuthHeader(headers);
     const response = await fetch(url, {
       ...init,
-      headers: init?.headers,
+      headers,
     });
     const text = await response.text();
     let payload: unknown = null;
@@ -280,6 +318,31 @@ export interface MetricsListResponse {
   items: MetricsResponse[];
   total: number;
 }
+
+export type ManualMetricsStation = {
+  nom?: string | null;
+  tmin?: number | null;
+  tmax?: number | null;
+  weather_icon?: string | null;
+};
+
+export type ManualMetricsEntry = {
+  date: string;
+  mapType: string;
+  source?: string | null;
+  stations: ManualMetricsStation[];
+};
+
+export type ManualMetricsIngestRequest = {
+  source?: string | null;
+  entries: ManualMetricsEntry[];
+};
+
+export type ManualMetricsIngestResponse = {
+  inserted_bulletins: number;
+  updated_payloads: number;
+  skipped: number;
+};
 
 export interface PipelineStepDto {
   key?: string;
@@ -532,12 +595,253 @@ export async function fetchBulletinByDate(date: string, type?: string) {
   return requestJson<BulletinDetail>(`/bulletins/${encodeURIComponent(date)}${query}`);
 }
 
+export async function ingestManualMetrics(payload: ManualMetricsIngestRequest) {
+  return postJson<ManualMetricsIngestResponse>("/json-metrics/ingest", payload);
+}
+
 export async function fetchMetricsByDate(date: string) {
   return requestJson<MetricsResponse>(`/metrics/${encodeURIComponent(date)}`);
 }
 
 export async function fetchMetricsList(limit = 50) {
   return requestJson<MetricsListResponse>(`/metrics?limit=${limit}`);
+}
+
+export interface StationDataRow {
+  id: number;
+  bulletin_id: number;
+  date: string;
+  map_type: "observation" | "forecast";
+  station_id: number;
+  station_name: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  tmin?: number | null;
+  tmax?: number | null;
+  tmin_raw?: string | null;
+  tmax_raw?: string | null;
+  weather_condition?: string | null;
+  processed_at?: string | null;
+}
+
+export interface StationDataResponse {
+  items: StationDataRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface StationDataFilters {
+  years: number[];
+  months: number[];
+  stations: string[];
+}
+
+export interface StationDataUpdateRequest {
+  tmin?: number | null;
+  tmax?: number | null;
+  tmin_raw?: string | null;
+  tmax_raw?: string | null;
+  weather_condition?: string | null;
+  user?: string | null;
+  reason?: string | null;
+}
+
+export interface StationDataUpdateResponse {
+  status: string;
+  updated: boolean;
+  row?: StationDataRow | null;
+  changes: Array<{ field: string; old_value: unknown; new_value: unknown }>;
+}
+
+export interface StationDataHistoryItem {
+  id: number;
+  weather_data_id?: number | null;
+  date?: string | null;
+  map_type?: string | null;
+  station_name?: string | null;
+  field: string;
+  old_value?: unknown;
+  new_value?: unknown;
+  updated_by?: string | null;
+  reason?: string | null;
+  updated_at?: string | null;
+}
+
+export interface StationDataHistoryResponse {
+  items: StationDataHistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AuthMeResponse {
+  username: string;
+  expires_at: number;
+  is_admin?: boolean;
+}
+
+export interface AuthLoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_at: number;
+}
+
+export async function loginAuth(email: string, password: string) {
+  return requestJson<AuthLoginResponse>("/auth/login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ username: email, email, password }),
+  });
+}
+
+export async function fetchAuthMe() {
+  return requestJson<AuthMeResponse>("/auth/me");
+}
+
+export interface AuthUserItem {
+  id: number;
+  name: string;
+  email: string;
+  is_admin: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AuthUsersPage {
+  items: AuthUserItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AuthUserCreateRequest {
+  name: string;
+  email: string;
+  password: string;
+  is_admin?: boolean;
+}
+
+export interface AuthUserUpdateRequest {
+  name?: string;
+  email?: string;
+  password?: string;
+  is_admin?: boolean | null;
+}
+
+export async function fetchAuthUsers(limit = 50, offset = 0) {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return requestJson<AuthUsersPage>(`/auth/users?${query.toString()}`);
+}
+
+export async function createAuthUser(payload: AuthUserCreateRequest) {
+  return requestJson<AuthUserItem>("/auth/users", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAuthUser(userId: number, payload: AuthUserUpdateRequest) {
+  return requestJson<AuthUserItem>(`/auth/users/${userId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAuthUser(userId: number) {
+  return requestJson<{ deleted: boolean }>(`/auth/users/${userId}`, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+}
+
+export async function fetchStationDataFilters() {
+  return requestJson<StationDataFilters>("/station-data/filters");
+}
+
+export async function fetchStationData(params: {
+  year?: number;
+  month?: number;
+  station?: string;
+  mapType?: "observation" | "forecast";
+  limit?: number;
+  offset?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params.year) query.set("year", String(params.year));
+  if (params.month) query.set("month", String(params.month));
+  if (params.station) query.set("station", params.station);
+  if (params.mapType) query.set("map_type", params.mapType);
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return requestJson<StationDataResponse>(`/station-data${suffix}`);
+}
+
+export async function updateStationDataRow(rowId: number, payload: StationDataUpdateRequest) {
+  return requestJson<StationDataUpdateResponse>(`/station-data/${rowId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export async function fetchStationDataHistory(params: {
+  year?: number;
+  month?: number;
+  station?: string;
+  mapType?: "observation" | "forecast";
+  limit?: number;
+  offset?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params.year) query.set("year", String(params.year));
+  if (params.month) query.set("month", String(params.month));
+  if (params.station) query.set("station", params.station);
+  if (params.mapType) query.set("map_type", params.mapType);
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return requestJson<StationDataHistoryResponse>(`/station-data/history${suffix}`);
+}
+
+export async function downloadStationDataCsv(params: {
+  year?: number;
+  month?: number;
+  station?: string;
+  mapType?: "observation" | "forecast";
+}) {
+  const query = new URLSearchParams();
+  if (params.year) query.set("year", String(params.year));
+  if (params.month) query.set("month", String(params.month));
+  if (params.station) query.set("station", params.station);
+  if (params.mapType) query.set("map_type", params.mapType);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const url = `${API_BASE}/station-data/export${suffix}`;
+  const headers = new Headers({ Accept: "text/csv" });
+  attachAuthHeader(headers);
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiError(text || `Request failed (${response.status})`, { status: response.status });
+  }
+  return response.blob();
 }
 
 export interface JsonMetricsFileInfo {
@@ -642,6 +946,27 @@ export interface StationMonthlyMetricsListResponse {
   total: number;
 }
 
+export type ContingencyScoreRow = {
+  code: string;
+  pod: number | null;
+  far: number | null;
+};
+
+export type ContingencyResponse = {
+  labels: string[];
+  matrix: number[][];
+  pc: number | null;
+  rows: ContingencyScoreRow[];
+  sample_size: number;
+  days_count?: number;
+  forecast_offset_days?: number;
+  filters: {
+    year?: number | null;
+    month?: number | null;
+    station_id?: number | null;
+  };
+};
+
 // Station Metrics API Functions
 export async function fetchStationsWithMetrics() {
   return requestJson<StationListResponse>(`/metrics/stations`);
@@ -661,6 +986,19 @@ export async function fetchMonthlyMetrics(year: number, month: number) {
 
 export async function fetchMonthlyMetricsList(limit = 12) {
   return requestJson<MonthlyMetricsListResponse>(`/metrics-monthly?limit=${limit}`);
+}
+
+export async function fetchContingencyMetrics(params: {
+  year?: number;
+  month?: number;
+  stationId?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params.year) query.set("year", String(params.year));
+  if (params.month) query.set("month", String(params.month));
+  if (params.stationId) query.set("station_id", String(params.stationId));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return requestJson<ContingencyResponse>(`/metrics/contingency${suffix}`);
 }
 
 // Utility function to format months in French (moved here for consistency)
@@ -942,4 +1280,36 @@ export async function translateBulletin(
     translations: Record<string, string>;
     rows_updated: number;
   }>(`/bulletins/${encodeURIComponent(date)}/translate?${params}`, {});
+}
+
+export type BulletinReprocessStartResponse = {
+  batch_id: string;
+  total: number;
+  status: "pending" | "running" | "completed" | "failed";
+  message?: string;
+};
+
+export type BulletinReprocessStatus = {
+  batch_id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  progress: {
+    current: number;
+    total: number;
+    success: number;
+    failed: number;
+    skipped: number;
+    missing: number;
+  };
+  errors?: string[];
+  error?: string;
+};
+
+export async function startBulletinsReprocess() {
+  return postJson<BulletinReprocessStartResponse>(`/bulletins/reprocess`, {});
+}
+
+export async function getBulletinsReprocessStatus(batchId: string) {
+  return requestJson<BulletinReprocessStatus>(
+    `/bulletins/reprocess/${encodeURIComponent(batchId)}`
+  );
 }

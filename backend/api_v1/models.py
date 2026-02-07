@@ -149,7 +149,8 @@ class UploadBatchStatus(BaseModel):
     jobs: List[UploadJobStatus]
 
 class LoginRequest(BaseModel):
-    username: str
+    username: Optional[str] = None
+    email: Optional[str] = None
     password: str
 
 
@@ -162,6 +163,37 @@ class LoginResponse(BaseModel):
 class MeResponse(BaseModel):
     username: str
     expires_at: int
+    is_admin: Optional[bool] = None
+
+
+class AuthUserCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    email: str = Field(..., min_length=3)
+    password: str = Field(..., min_length=1)
+    is_admin: Optional[bool] = False
+
+
+class AuthUserUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+    is_admin: Optional[bool] = None
+
+
+class AuthUserItem(BaseModel):
+    id: int
+    name: str
+    email: str
+    is_admin: bool = False
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class AuthUsersPage(BaseModel):
+    items: List[AuthUserItem]
+    total: int
+    limit: int
+    offset: int
 
 
 class PipelineTriggerRequest(BaseModel):
@@ -235,6 +267,74 @@ class TemperatureCorrectionRequest(BaseModel):
     tmin: Optional[float] = None
     tmax: Optional[float] = None
     issue_id: Optional[int] = None
+
+
+class StationDataRow(BaseModel):
+    id: int
+    bulletin_id: int
+    date: str
+    map_type: str
+    station_id: int
+    station_name: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    tmin: Optional[float] = None
+    tmax: Optional[float] = None
+    tmin_raw: Optional[str] = None
+    tmax_raw: Optional[str] = None
+    weather_condition: Optional[str] = None
+    processed_at: Optional[str] = None
+
+
+class StationDataPage(BaseModel):
+    items: List[StationDataRow]
+    total: int
+    limit: int
+    offset: int
+
+
+class StationDataFilters(BaseModel):
+    years: List[int] = Field(default_factory=list)
+    months: List[int] = Field(default_factory=list)
+    stations: List[str] = Field(default_factory=list)
+
+
+class StationDataUpdateRequest(BaseModel):
+    tmin: Optional[float] = None
+    tmax: Optional[float] = None
+    tmin_raw: Optional[str] = None
+    tmax_raw: Optional[str] = None
+    weather_condition: Optional[str] = None
+    user: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class StationDataUpdateResponse(BaseModel):
+    status: str
+    updated: bool
+    row: Optional[StationDataRow] = None
+    changes: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class StationDataHistoryItem(BaseModel):
+    id: int
+    weather_data_id: Optional[int] = None
+    date: Optional[str] = None
+    map_type: Optional[str] = None
+    station_name: Optional[str] = None
+    field: str
+    old_value: Optional[Any] = None
+    new_value: Optional[Any] = None
+    updated_by: Optional[str] = None
+    reason: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class StationDataHistoryPage(BaseModel):
+    items: List[StationDataHistoryItem]
+    total: int
+    limit: int
+    offset: int
 
 
 class MetricsRecalculateRequest(BaseModel):

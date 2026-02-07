@@ -1,6 +1,7 @@
 import json
 import logging
 import sqlite3
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -290,3 +291,84 @@ async def list_station_monthly_metrics(station_id: int, limit: int = Query(12, g
     
     _cache_set(cache_key, payload)
     return payload
+
+
+def _compute_contingency_scores(labels, matrix):
+    total = sum(sum(row) for row in matrix)
+    diag = sum(matrix[i][i] if i < len(matrix[i]) else 0 for i in range(len(labels)))
+    pc = (diag / total) * 100 if total > 0 else None
+    rows = []
+    for idx, label in enumerate(labels):
+        oi = sum(matrix[idx]) if idx < len(matrix) else 0
+        pi = sum(row[idx] for row in matrix if idx < len(row))
+        nii = matrix[idx][idx] if idx < len(matrix) and idx < len(matrix[idx]) else 0
+        pod = (nii / oi) if oi > 0 else None
+        rel = (nii / pi) if pi > 0 else None
+        far = (1 - rel) if rel is not None else None
+        rows.append({"code": label, "pod": pod, "far": far})
+    return {"pc": pc, "rows": rows}
+
+
+@router.get("/metrics/contingency")
+async def get_contingency_metrics(
+    year: Optional[int] = Query(None, ge=1900),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    station_id: Optional[int] = Query(None, ge=1),
+):
+    """Calcule la matrice de contingence depuis la base avec filtres."""
+    _ensure_db_ready()
+    assert core.db_manager is not None
+
+    observation_dates = core.db_manager.list_bulletin_dates("observation")
+    if year is not None:
+        observation_dates = [
+            date for date in observation_dates if date.startswith(f"{year:04d}-")
+        ]
+    if month is not None:
+        if year is not None:
+            observation_dates = [
+                date
+                for date in observation_dates
+                if date.startswith(f"{year:04d}-{month:02d}")
+            ]
+        else:
+            observation_dates = [
+                date
+                for date in observation_dates
+                if len(date) >= 7 and date[5:7] == f"{month:02d}"
+            ]
+
+    weather_obs = []
+    weather_fore = []
+    days_with_pairs = 0
+    evaluator = ForecastEvaluator(core.db_manager)
+
+    for observation_date in observation_dates:
+        try:
+            obs_dt = datetime.strptime(observation_date, "%Y-%m-%d")
+        except ValueError:
+            continue
+        forecast_date = (obs_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+        pairs = core.db_manager.get_observation_forecast_pairs(
+            observation_date, forecast_date, station_id
+        )
+        if pairs:
+            days_with_pairs += 1
+        for row in pairs:
+            weather_obs.append(row[3])
+            weather_fore.append(row[6])
+
+    metrics = evaluator.calculate_weather_metrics(weather_obs, weather_fore)
+    confusion = metrics.get("confusion_matrix") or {"labels": [], "matrix": []}
+    scores = _compute_contingency_scores(confusion.get("labels", []), confusion.get("matrix", []))
+
+    return {
+        "labels": confusion.get("labels", []),
+        "matrix": confusion.get("matrix", []),
+        "pc": scores["pc"],
+        "rows": scores["rows"],
+        "sample_size": metrics.get("sample_size", 0),
+        "days_count": days_with_pairs,
+        "forecast_offset_days": 1,
+        "filters": {"year": year, "month": month, "station_id": station_id},
+    }

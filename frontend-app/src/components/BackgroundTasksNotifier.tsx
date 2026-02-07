@@ -87,10 +87,16 @@ function TaskCard({ task, onCancel, onRemove }: TaskCardProps) {
           </span>
           <div>
             <h4 className="text-sm font-semibold text-ink">
-              {task.type === "bulk_translation" ? "Traductions en masse" : "Traduction"}
+              {task.type === "bulk_translation"
+                ? "Traductions en masse"
+                : task.type === "bulletin_reprocess"
+                ? "Ré-extraction bulletins"
+                : "Traduction"}
             </h4>
             <p className="text-xs text-muted">
-              {task.metadata.languages.join(", ")}
+              {task.type === "bulletin_reprocess"
+                ? task.metadata.label || "Traitement OCR"
+                : (task.metadata.languages ?? []).join(", ")}
             </p>
           </div>
         </div>
@@ -131,6 +137,12 @@ function TaskCard({ task, onCancel, onRemove }: TaskCardProps) {
       {task.status === "completed" && task.result && (
         <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg p-2">
           ✓ {task.result.successCount} réussies, {task.result.failedCount} échouées
+          {typeof task.result.skippedCount === "number" && (
+            <> • {task.result.skippedCount} ignorées</>
+          )}
+          {typeof task.result.missingCount === "number" && (
+            <> • {task.result.missingCount} manquantes</>
+          )}
         </div>
       )}
 

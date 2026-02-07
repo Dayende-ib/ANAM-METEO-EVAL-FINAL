@@ -1,6 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { NAV_ITEMS, type NavItem } from "../navigation";
 import logoANAM from "../assets/logoANAMoriginal.png";
+import { setAuthToken } from "../services/api";
 
 type SidebarProps = {
   navItems?: NavItem[];
@@ -19,6 +20,13 @@ export function Sidebar({
 }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+
+  const handleLogout = () => {
+    setAuthToken(null);
+    navigate("/login");
+  };
+
+  const year = new Date().getFullYear();
 
   const navigationContent = (
     <>
@@ -56,13 +64,14 @@ export function Sidebar({
         })}
       </nav>
       <div className="p-4 border-t border-[var(--border)]">
-        <div className="text-xs text-muted text-center mb-2">
-          ANAM MÉTÉO ÉVAL {new Date().getFullYear()}
-        </div>
-        <button className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[var(--canvas-strong)] text-muted w-full transition-colors">
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[var(--canvas-strong)] text-muted w-full transition-colors"
+        >
           <span className="material-symbols-outlined">logout</span>
-          <p className="text-sm font-medium leading-normal">Déconnexion</p>
+          <p className="text-sm font-medium leading-normal">Deconnexion</p>
         </button>
+        <div className="text-xs text-muted text-center mt-2">ANAM METEO EVAL {year}</div>
       </div>
     </>
   );
@@ -81,7 +90,7 @@ export function Sidebar({
             className="rounded-lg border border-[var(--border)] px-2 py-1 text-sm text-muted hover:bg-[var(--canvas-strong)] transition-colors"
             onClick={onDesktopToggle}
           >
-            Réduire
+            Reduire
           </button>
         </div>
         {navigationContent}

@@ -1,12 +1,13 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { BrowserRouter, Route, Routes, Navigate, Outlet } from "react-router-dom";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { AboutPage } from "./pages/AboutPage";
 import { MapPage } from "./pages/MapPage";
 import { ExplorationBulletinsPage } from "./pages/ExplorationBulletinsPage";
-import { MetriquesEvaluationPage } from "./pages/MetriquesEvaluationPage";
-import { JsonMetricsPage } from "./pages/JsonMetricsPage";
+
+import { UnifiedMetricsPage } from "./pages/UnifiedMetricsPage";
 import { PilotagePipelinePage } from "./pages/PilotagePipelinePage";
 import { UploadBulletinPage } from "./pages/UploadBulletinPage";
 import { ValidationIssuesPage } from "./pages/ValidationIssuesPage";
@@ -14,6 +15,98 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { ParametresPage } from "./pages/ParametresPage";
 import { DetailsStationsPage } from "./pages/DetailsStationsPage";
 import { BackgroundTasksNotifier } from "./components/BackgroundTasksNotifier";
+import { StationDataPage } from "./pages/StationDataPage";
+import { AdminUsersPage } from "./pages/AdminUsersPage";
+import { FeedBulletinPage } from "./pages/FeedBulletinPage";
+import { fetchAuthMe, getAuthToken, setAuthToken } from "./services/api";
+
+function RequireAuth() {
+ const [status, setStatus] = useState<"checking" | "authed" | "unauth">("checking");
+
+ useEffect(() => {
+  let cancelled = false;
+  const checkAuth = async () => {
+   const token = getAuthToken();
+   if (!token) {
+    setStatus("unauth");
+    return;
+   }
+   try {
+    await fetchAuthMe();
+    if (cancelled) return;
+    setStatus("authed");
+   } catch (err) {
+    if (cancelled) return;
+    const statusCode = (err as { status?: number })?.status;
+    if (statusCode === 401 || statusCode === 403) {
+     setAuthToken(null);
+     setStatus("unauth");
+     return;
+    }
+    setStatus("authed");
+   }
+  };
+  checkAuth();
+  return () => {
+   cancelled = true;
+  };
+ }, []);
+
+ if (status === "checking") {
+  return (
+   <div className="flex min-h-screen items-center justify-center bg-canvas text-ink">
+    <div className="surface-panel p-6 text-sm text-muted">Verification de la session...</div>
+   </div>
+  );
+ }
+
+ if (status === "unauth") {
+  return <Navigate to="/login" replace />;
+ }
+
+ return <Outlet />;
+}
+
+function RequireAdmin() {
+ const [status, setStatus] = useState<"checking" | "ok" | "forbidden">("checking");
+
+ useEffect(() => {
+  let cancelled = false;
+  const checkAdmin = async () => {
+   try {
+    const payload = await fetchAuthMe();
+    if (cancelled) return;
+    if (payload.is_admin) {
+     setStatus("ok");
+    } else {
+     setStatus("forbidden");
+    }
+   } catch {
+    if (!cancelled) {
+     setStatus("forbidden");
+    }
+   }
+  };
+  checkAdmin();
+  return () => {
+   cancelled = true;
+  };
+ }, []);
+
+ if (status === "checking") {
+  return (
+   <div className="flex min-h-screen items-center justify-center bg-canvas text-ink">
+    <div className="surface-panel p-6 text-sm text-muted">Verification des droits...</div>
+   </div>
+  );
+ }
+
+ if (status === "forbidden") {
+  return <Navigate to="/dashboard" replace />;
+ }
+
+ return <Outlet />;
+}
 
 export default function App() {
  return (
@@ -22,17 +115,23 @@ export default function App() {
     <Routes>
      <Route path="/" element={<HomePage />} />
      <Route path="/login" element={<LoginPage />} />
+     <Route element={<RequireAuth />}>
      <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/feed-bulletin-jour" element={<FeedBulletinPage />} />
      <Route path="/exploration-bulletins" element={<ExplorationBulletinsPage />} />
-     <Route path="/metriques-evaluation" element={<MetriquesEvaluationPage />} />
-     <Route path="/metriques-json" element={<JsonMetricsPage />} />
-     <Route path="/pilotage-pipeline" element={<PilotagePipelinePage />} />
-     <Route path="/upload" element={<UploadBulletinPage />} />
-     <Route path="/map" element={<MapPage />} />
-     <Route path="/details-stations" element={<DetailsStationsPage />} />
+      <Route path="/metriques-unifiees" element={<UnifiedMetricsPage />} />
+      <Route path="/pilotage-pipeline" element={<PilotagePipelinePage />} />
+      <Route path="/upload" element={<UploadBulletinPage />} />
+      <Route path="/map" element={<MapPage />} />
+      <Route path="/details-stations" element={<DetailsStationsPage />} />
+      <Route path="/donnees-stations" element={<StationDataPage />} />
      <Route path="/validation-issues" element={<ValidationIssuesPage />} />
      <Route path="/parametres" element={<ParametresPage />} />
      <Route path="/about" element={<AboutPage />} />
+      <Route element={<RequireAdmin />}>
+       <Route path="/admin-utilisateurs" element={<AdminUsersPage />} />
+      </Route>
+     </Route>
      <Route path="*" element={<NotFoundPage />} />
     </Routes>
 

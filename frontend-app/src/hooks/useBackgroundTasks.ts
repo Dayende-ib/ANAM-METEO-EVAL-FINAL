@@ -5,7 +5,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { backgroundTasksStore, BackgroundTask } from "../services/backgroundTasksStore";
-import { getTranslationTaskStatus, fetchBulletins } from "../services/api";
+import {
+  getTranslationTaskStatus,
+  fetchBulletins,
+  getBulletinsReprocessStatus,
+} from "../services/api";
 
 export function useBackgroundTasks() {
   const [activeTasks, setActiveTasks] = useState<BackgroundTask[]>([]);
@@ -57,6 +61,26 @@ export function useBackgroundTasks() {
     },
     []
   );
+
+  /**
+   * Créer une tâche de ré-extraction des bulletins
+   */
+  const createBulletinReprocessTask = useCallback((batchId: string, total: number) => {
+    const taskId = backgroundTasksStore.createTask(
+      "bulletin_reprocess",
+      {
+        taskIds: [batchId],
+        label: "OCR / Icônes / Intégration",
+      },
+      total,
+    );
+
+    backgroundTasksStore.startPolling(taskId, async () => {
+      await pollBulletinReprocessProgress(taskId, batchId);
+    });
+
+    return taskId;
+  }, []);
 
   /**
    * Polling de la progression d'une tâche en masse
@@ -117,6 +141,49 @@ export function useBackgroundTasks() {
   };
 
   /**
+   * Polling de la progression de ré-extraction
+   */
+  const pollBulletinReprocessProgress = async (taskId: string, batchId: string) => {
+    const task = backgroundTasksStore.getTask(taskId);
+    if (!task) return;
+
+    try {
+      const status = await getBulletinsReprocessStatus(batchId);
+      const progress = status.progress;
+      const totalCompleted = progress.success + progress.failed + progress.skipped + progress.missing;
+      const newStatus =
+        status.status === "completed"
+          ? "completed"
+          : status.status === "failed"
+          ? "failed"
+          : "running";
+
+      backgroundTasksStore.updateTask(taskId, {
+        status: newStatus,
+        progress: { current: totalCompleted, total: progress.total },
+        result: {
+          successCount: progress.success,
+          failedCount: progress.failed,
+          skippedCount: progress.skipped,
+          missingCount: progress.missing,
+          details: status.errors,
+        },
+        error: status.error,
+      });
+
+      if (newStatus === "completed" || newStatus === "failed") {
+        backgroundTasksStore.stopPolling(taskId);
+      }
+    } catch (err) {
+      backgroundTasksStore.updateTask(taskId, {
+        status: "failed",
+        error: "Erreur de suivi de ré-extraction.",
+      });
+      backgroundTasksStore.stopPolling(taskId);
+    }
+  };
+
+  /**
    * Reprendre le polling d'une tâche existante
    */
   const resumeTaskPolling = useCallback((taskId: string) => {
@@ -126,6 +193,13 @@ export function useBackgroundTasks() {
     if (task.type === "bulk_translation") {
       backgroundTasksStore.startPolling(taskId, async () => {
         await pollBulkTranslationProgress(taskId, task.metadata.taskIds);
+      });
+    }
+    if (task.type === "bulletin_reprocess") {
+      const batchId = task.metadata.taskIds[0];
+      if (!batchId) return;
+      backgroundTasksStore.startPolling(taskId, async () => {
+        await pollBulletinReprocessProgress(taskId, batchId);
       });
     }
   }, []);
@@ -155,6 +229,7 @@ export function useBackgroundTasks() {
     activeTasks,
     allTasks,
     createBulkTranslationTask,
+    createBulletinReprocessTask,
     cancelTask,
     removeTask,
     clearCompletedTasks,

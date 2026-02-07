@@ -12,6 +12,7 @@ from typing import Any, List, Optional, Union
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile, Path as ApiPath
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse
+from pydantic import BaseModel, Field
 
 from backend.api_v1.models import (
     ScrapeRequest, ScrapeResponse, ScrapeManifestResponse,
@@ -28,6 +29,9 @@ from backend.api_v1.utils import (
 from backend.modules.pdf_scrap import MeteoBurkinaScraper, ManifestStore, ScrapeConfig
 from backend.modules.pdf_extractor import PDFExtractor
 from backend.modules.temperature_extractor import TemperatureExtractor
+from backend.modules.workflow_temperature_extractor import WorkflowTemperatureExtractor
+from backend.modules.icon_classifier import IconClassifier
+from backend.modules.data_integrator import DataIntegrator
 
 logger = logging.getLogger("anam.api")
 router = APIRouter(tags=["data_management"])
@@ -75,6 +79,54 @@ def _map_type_from_name(filename: str) -> Optional[str]:
     if "forecast" in lowered or "prevision" in lowered:
         return "forecast"
     return None
+
+
+def _infer_bulletin_type_from_filename(filename: str) -> Optional[str]:
+    lowered = filename.lower()
+    if "forecast" in lowered or "prevision" in lowered or "prévision" in lowered:
+        return "forecast"
+    if "observed" in lowered or "observation" in lowered or "obs" in lowered:
+        return "observation"
+    return None
+
+
+def _normalize_manual_map_type(value: str) -> Optional[str]:
+    lowered = value.lower().strip()
+    if lowered in {"observed", "observation", "obs"}:
+        return "observation"
+    if lowered in {"forecast", "prevision", "prev"}:
+        return "forecast"
+    return None
+
+
+def _sanitize_source(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "_", value.strip())
+    return cleaned.strip("_") or "manual"
+
+
+class ManualMetricsStation(BaseModel):
+    nom: Optional[str] = None
+    tmin: Optional[float] = None
+    tmax: Optional[float] = None
+    weather_icon: Optional[str] = None
+
+
+class ManualMetricsEntry(BaseModel):
+    date: str = Field(..., min_length=8)
+    mapType: str = Field(..., min_length=3)
+    source: Optional[str] = None
+    stations: List[ManualMetricsStation] = Field(default_factory=list)
+
+
+class ManualMetricsIngestRequest(BaseModel):
+    source: Optional[str] = None
+    entries: List[ManualMetricsEntry] = Field(default_factory=list)
+
+
+class ManualMetricsIngestResponse(BaseModel):
+    inserted_bulletins: int
+    updated_payloads: int
+    skipped: int
 
 
 @router.get("/json-metrics/files")
@@ -130,6 +182,74 @@ async def get_json_metrics_file(path: str = Query(..., min_length=1)):
         raise HTTPException(status_code=500, detail=f"Lecture JSON impossible: {exc}")
 
     return {"path": path, "data": payload}
+
+
+@router.post("/json-metrics/ingest", response_model=ManualMetricsIngestResponse)
+async def ingest_json_metrics(payload: ManualMetricsIngestRequest):
+    """Insere des donnees JSON/CSV traitees dans la base."""
+    _ensure_db_ready()
+    if core.db_manager is None:
+        raise HTTPException(status_code=500, detail="Base de donnees indisponible.")
+
+    inserted = 0
+    updated = 0
+    skipped = 0
+    source = payload.source or "manual"
+    source_key = _sanitize_source(source)
+
+    for index, entry in enumerate(payload.entries):
+        try:
+            datetime.strptime(entry.date, "%Y-%m-%d")
+        except ValueError:
+            skipped += 1
+            continue
+
+        bulletin_type = _normalize_manual_map_type(entry.mapType or "")
+        if not bulletin_type:
+            skipped += 1
+            continue
+
+        pdf_path = f"manual-import/{source_key}/{entry.date}-{bulletin_type}-{index}.json"
+        if not core.db_manager.has_bulletin_for_pdf(pdf_path):
+            core.db_manager.insert_bulletin(
+                entry.date,
+                bulletin_type,
+                file_path=pdf_path,
+                title=f"Manual import {entry.date} {bulletin_type}",
+            )
+            inserted += 1
+
+        payload_stations: List[dict] = []
+        for station in entry.stations:
+            name = (station.nom or "").strip()
+            if not name:
+                continue
+            station_payload = {"name": name}
+            block = {
+                "tmin": station.tmin,
+                "tmax": station.tmax,
+                "weather_condition": station.weather_icon,
+            }
+            if bulletin_type == "observation":
+                station_payload["observation"] = block
+            else:
+                station_payload["prevision"] = block
+            payload_stations.append(station_payload)
+
+        payload_dict = {
+            "date_bulletin": entry.date,
+            "type": bulletin_type,
+            "source": entry.source or source,
+            "stations": payload_stations,
+        }
+        core.db_manager.upsert_bulletin_payload(pdf_path, payload_dict)
+        updated += 1
+
+    return ManualMetricsIngestResponse(
+        inserted_bulletins=inserted,
+        updated_payloads=updated,
+        skipped=skipped,
+    )
 
 @router.post("/scrape", response_model=ScrapeResponse)
 async def trigger_scrape(request: ScrapeRequest):
